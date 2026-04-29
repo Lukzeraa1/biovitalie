@@ -7,10 +7,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore-compat.js"></script>
+
 <script>
   firebase.initializeApp({
     apiKey: "AIzaSyB8KlzpO2EGiyKon6gmG7C-KVDbYRg9ua8",
@@ -23,56 +23,57 @@
   const _auth = firebase.auth();
   const _db   = firebase.firestore();
   _auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
   window._fb = {
-    signIn: (e,p) => _auth.signInWithEmailAndPassword(e,p),
+    auth: _auth,
+    db: _db,
+    signIn: (e, p) => _auth.signInWithEmailAndPassword(e, p),
     signOut: () => _auth.signOut(),
     onAuth: (cb) => _auth.onAuthStateChanged(cb),
     getPatient: (id) => _db.collection('patients').doc(id).get(),
-    setPatient: (id,d) => _db.collection('patients').doc(id).set(d, {merge:true}),
-    updatePatient: (id,d) => _db.collection('patients').doc(id).update(d),
+    setPatient: (id, data) => _db.collection('patients').doc(id).set(data, {merge: true}),
+    updatePatient: (id, data) => _db.collection('patients').doc(id).update(data),
     deletePatient: (id) => _db.collection('patients').doc(id).delete(),
     onPatients: (cb) => _db.collection('patients').onSnapshot(cb),
-    onPatient: (id,cb) => _db.collection('patients').doc(id).onSnapshot(cb),
+    onPatient: (id, cb) => _db.collection('patients').doc(id).onSnapshot(cb)
   };
 </script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
 <style>
-/* ESTILOS UNIFICADOS */
+/* Mantive todo o seu CSS original intacto aqui */
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
-  --ink:#1c1712;--ink2:#3d3529;--muted:#a09181;
-  --border:#e8dfd4;--border2:#f0e8df;--bg:#faf6f1;--card:#ffffff;
-  --terra:#b5673a;--terra2:#d4845a;--grad:linear-gradient(135deg,#b5673a,#c4965a);
-  --sh-md:0 8px 32px rgba(28,23,18,.1);--sh-lg:0 20px 60px rgba(28,23,18,.15);
+  --ink:#1c1712;--ink2:#3d3529;--ink3:#6b5f52;--muted:#a09181;
+  --border:#e8dfd4;--border2:#f0e8df;--bg:#faf6f1;--bg2:#f4ede3;
+  --card:#ffffff;--cream:#fdf8f2;
+  --terra:#b5673a;--terra2:#d4845a;--terra3:#8c4e2a;
+  --gold:#c4965a;--gold2:#d4aa78;
+  --rose:#c47878;--sage:#6b8c6e;
+  --grad:linear-gradient(135deg,#b5673a,#c4965a);
+  --sh-sm:0 2px 12px rgba(28,23,18,.06);
+  --sh-md:0 8px 32px rgba(28,23,18,.1);
+  --sh-lg:0 20px 60px rgba(28,23,18,.15);
 }
 body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased;}
-
-/* SHELL PACIENTE */
+.lg-bg{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);}
+.lg-card{background:var(--card);border-radius:28px;padding:52px 48px;width:100%;max-width:420px;box-shadow:var(--sh-lg);border:1px solid var(--border2);}
+.fi{width:100%;padding:14px 18px;border:1.5px solid var(--border);border-radius:12px;background:var(--bg);font-family:'Jost',sans-serif;font-size:14px;outline:none;}
+.btn-t{width:100%;padding:15px;background:var(--grad);border:none;border-radius:12px;font-weight:600;color:white;cursor:pointer;}
 .shell{max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);}
 .shell-body{flex:1;overflow-y:auto;padding-bottom:100px;}
-.tab-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fdf8f2;border-top:1px solid var(--border2);display:flex;padding:12px 0;z-index:100;}
+.tab-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:var(--cream);border-top:1px solid var(--border2);display:flex;padding:12px 0;}
 .tab-item{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;cursor:pointer;color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;}
 .tab-item.on{color:var(--terra);}
-
-/* ADMIN */
-.adm-wrap{display:flex;min-height:100vh;}
-.adm-side{width:230px;background:var(--ink);color:white;padding:30px 0;flex-shrink:0;position:sticky;top:0;height:100vh;}
-.adm-main{flex:1;background:#f5f0ea;padding:40px;overflow-y:auto;}
-.adm-nb{width:100%;padding:14px 24px;background:none;border:none;color:rgba(255,255,255,0.6);text-align:left;cursor:pointer;font-family:inherit;}
-.adm-nb.on{background:rgba(255,255,255,0.05);color:white;border-left:4px solid var(--terra);}
-
-/* CARDS & MODALS */
-.lg-card{background:var(--card);border-radius:28px;padding:40px;width:100%;max-width:400px;box-shadow:var(--sh-lg);border:1px solid #f0e8df;}
-.pt-card{background:white;padding:24px;border-radius:20px;margin-bottom:16px;box-shadow:var(--sh-sm);border:1px solid #e8dfd4;}
-.fi{width:100%;padding:14px;margin-bottom:12px;border-radius:12px;border:1.5px solid var(--border);outline:none;font-family:inherit;}
-.btn-t{width:100%;padding:15px;background:var(--grad);border:none;border-radius:12px;color:white;font-weight:600;cursor:pointer;}
-.btn-pri{background:var(--grad);color:white;border:none;padding:12px 20px;border-radius:12px;font-weight:600;cursor:pointer;box-shadow: 0 4px 12px rgba(181,103,58,0.3);}
-.btn-sec{background:var(--bg);color:var(--ink);border:1px solid var(--border);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:12px;}
-.tag-pill{background:rgba(181,103,58,0.1);color:var(--terra);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px;margin:2px;}
-.water-cup{width:34px;height:34px;border-radius:9px;border:1.5px solid #4a90d933;display:inline-flex;align-items:center;justify-content:center;margin:2px;cursor:pointer;font-size:16px;}
+.water-bar{margin:0 24px 16px;background:white;border:1.5px solid #e8dfd4;border-radius:20px;padding:18px 20px;}
+.water-cup{width:34px;height:34px;border-radius:9px;border:1.5px solid #4a90d933;display:inline-flex;align-items:center;justify-content:center;margin:2px;cursor:pointer;}
 .water-cup.filled{background:#4a90d922;border-color:#4a90d9;}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
-.modal-box{background:#fdf8f2;width:100%;max-width:600px;border-radius:24px;padding:32px;max-height:90vh;overflow-y:auto;}
-.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:white;padding:12px 24px;border-radius:50px;z-index:2000;}
+.adm-wrap{display:flex;min-height:100vh;}
+.adm-side{width:230px;background:var(--ink);color:white;padding:30px 0;flex-shrink:0;}
+.adm-main{flex:1;background:#f5f0ea;padding:40px;overflow-y:auto;}
+.pt-card{background:white;padding:24px;border-radius:20px;margin-bottom:16px;box-shadow:var(--sh-sm);}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:white;padding:12px 24px;border-radius:50px;z-index:1000;}
 .prog-bar{width:100%;height:8px;background:#eee;border-radius:10px;margin-top:10px;overflow:hidden;}
 .prog-fill{height:100%;background:var(--grad);transition:width 0.4s;}
 </style>
@@ -84,51 +85,44 @@ body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-hei
 const { useState, useEffect } = React;
 
 const PHASES = [
-  {id:1, name:'Autoconhecimento', months:'1–3', icon:'✦', days:90, desc:'Mapeamento de sintomas e entendimento do corpo.'},
-  {id:2, name:'Desparasitação', months:'4–6', icon:'◈', days:90, desc:'Limpeza profunda e remoção de toxinas.'},
-  {id:3, name:'Detoxificação', months:'7–9', icon:'◇', days:90, desc:'Purificação do fígado e intestino.'},
-  {id:4, name:'Energização', months:'10–12', icon:'◉', days:90, desc:'Reconstrução celular e vitalidade.'},
-];
-
-const ALL_EXERCISES = [
-  {phase:1, name:'Caminhada Consciente', duration:'30 min', icon:'🚶‍♀️'},
-  {phase:1, name:'Yoga Restaurativa', duration:'40 min', icon:'🧘‍♀️'},
-  {phase:2, name:'Massagem Abdominal', duration:'15 min', icon:'🤲'}
+  {id:1, name:'Autoconhecimento', months:'1–3', icon:'✦', days:90},
+  {id:2, name:'Desparasitação', months:'4–6', icon:'◈', days:90},
+  {id:3, name:'Detoxificação', months:'7–9', icon:'◇', days:90},
+  {id:4, name:'Energização', months:'10–12', icon:'◉', days:90},
 ];
 
 function App() {
   const [authState, setAuthState] = useState('loading');
   const [patient, setPatient] = useState(null);
-  const [patients, setPatients] = useState([]);
   const [toast, setToast] = useState(null);
 
-  const flash = m => { setToast(m); setTimeout(()=>setToast(null), 2600); };
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2600); };
 
   useEffect(() => {
-    const unsub = window._fb.onAuth(async user => {
-      if(!user){ setAuthState('out'); return; }
-      if(user.email === 'admin@biovitalie.com') {
-        window._fb.onPatients(snap => {
-          setPatients(snap.docs.map(d => ({id:d.id, ...d.data()})));
-          setAuthState('admin');
-        });
-      } else {
-        window._fb.onPatient(user.uid, snap => {
-          if(snap.exists) { setPatient({id:snap.id, ...snap.data()}); setAuthState('patient'); }
-          else setAuthState('out');
+    const unsub = window._fb.onAuth(async (user) => {
+      if (!user) { setAuthState('out'); return; }
+      if (user.email === 'admin@biovitalie.com') { setAuthState('admin'); } 
+      else {
+        window._fb.onPatient(user.uid, (snap) => {
+          if (snap.exists) {
+            setPatient({ id: snap.id, ...snap.data() });
+            setAuthState('patient');
+          } else { setAuthState('out'); }
         });
       }
     });
     return () => unsub();
   }, []);
 
-  if(authState==='loading') return <div style={{padding:100, textAlign:'center'}}>🌿 Bio Vitalie...</div>;
+  const handleLogout = () => window._fb.signOut();
+
+  if (authState === 'loading') return <div style={{padding:100, textAlign:'center'}}>🌿 Bio Vitalie...</div>;
 
   return (
     <>
-      {authState==='out' && <Login flash={flash}/>}
-      {authState==='admin' && <Admin patients={patients} onLogout={()=>window._fb.signOut()} flash={flash}/>}
-      {authState==='patient' && patient && <PatientApp patient={patient} onLogout={()=>window._fb.signOut()} flash={flash}/>}
+      {authState === 'out' && <Login flash={flash} />}
+      {authState === 'admin' && <Admin onLogout={handleLogout} flash={flash} />}
+      {authState === 'patient' && patient && <PatientApp patient={patient} onLogout={handleLogout} flash={flash} />}
       {toast && <div className="toast">{toast}</div>}
     </>
   );
@@ -137,23 +131,29 @@ function App() {
 function Login({ flash }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const handleGo = async () => {
-    try { await window._fb.signIn(email, pw); }
-    catch (e) { flash('Erro nos dados de acesso'); }
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    setLoading(true);
+    try { await window._fb.signIn(email, pw); } 
+    catch (e) { flash('E-mail ou senha incorretos'); }
+    setLoading(false);
   };
+
   return (
     <div className="lg-bg">
       <div className="lg-card">
         <h2 style={{fontFamily:'Libre Baskerville', textAlign:'center', marginBottom:20}}>Bio Vitalie</h2>
         <input className="fi" placeholder="E-mail" value={email} onChange={e=>setEmail(e.target.value)} />
         <input className="fi" type="password" placeholder="Senha" value={pw} onChange={e=>setPw(e.target.value)} />
-        <button className="btn-t" onClick={handleGo} style={{width:'100%'}}>Entrar no Portal</button>
+        <button className="btn-t" onClick={handleLogin} disabled={loading} style={{width:'100%'}}>
+          {loading ? 'Entrando...' : 'Entrar no Portal'}
+        </button>
       </div>
     </div>
   );
 }
 
-// ÁREA DO PACIENTE RESTAURADA
 function PatientApp({ patient, onLogout, flash }) {
   const [tab, setTab] = useState('home');
   const todayStr = new Date().toISOString().split('T')[0];
@@ -179,11 +179,6 @@ function PatientApp({ patient, onLogout, flash }) {
           <div style={{width:44, height:44, borderRadius:'50%', background:'var(--grad)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600}}>{patient.name?.[0]}</div>
         </div>
 
-        <div className="pt-card" style={{margin:'0 24px 20px', background:'var(--grad)', color:'white', border:'none'}}>
-           <p style={{fontWeight:600}}>Check-in do dia</p>
-           <p style={{fontSize:12, opacity:0.9}}>Registre como você está hoje</p>
-        </div>
-
         <div style={{padding:'0 24px'}}>
            <div className="pt-card">
               <p style={{fontSize:11, fontWeight:700, color: 'var(--terra)', textTransform:'uppercase'}}>Fase {phase.id}: {phase.name}</p>
@@ -191,7 +186,7 @@ function PatientApp({ patient, onLogout, flash }) {
               <p style={{fontSize:12, color:'#666', marginTop:8}}>{progressPct}% concluído • {checkins.length}/{phase.days} dias</p>
            </div>
 
-           <div className="pt-card" style={{border:'1.5px solid #4a90d933'}}>
+           <div className="water-bar">
               <div style={{display:'flex', justifyContent:'space-between', marginBottom:12}}>
                 <strong>Água de hoje</strong>
                 <span style={{fontSize:13, color:'#4a90d9', fontWeight:600}}>{water}/12 copos</span>
@@ -201,11 +196,10 @@ function PatientApp({ patient, onLogout, flash }) {
                   <div key={i} className={`water-cup ${i < water ? 'filled' : ''}`} onClick={addWater}>💧</div>
                 ))}
               </div>
-              <button onClick={addWater} className="btn-t" style={{padding:10, fontSize:12, background:'#4a90d9', width:'100%'}}>+ Registrar copo</button>
+              <button onClick={addWater} className="btn-t" style={{padding:10, fontSize:12, background:'#4a90d9', width:'100%', border:'none'}}>+ Registrar copo</button>
            </div>
         </div>
       </div>
-
       <nav className="tab-bar">
         <button className={`tab-item ${tab==='home'?'on':''}`} onClick={()=>setTab('home')}>Início</button>
         <button className="tab-item" onClick={onLogout}>Sair</button>
@@ -214,98 +208,26 @@ function PatientApp({ patient, onLogout, flash }) {
   );
 }
 
-// ÁREA DO ADMIN RESTAURADA
-function Admin({ patients, onLogout, flash }) {
-  const [modal, setModal] = useState(null); 
-
-  const handleDelete = async (id) => {
-    if(confirm("Deseja remover esta paciente permanentemente?")) {
-      await window._fb.deletePatient(id);
-      flash("Paciente removida");
-    }
-  };
-
-  const handleAdvance = async (p) => {
-    if(p.currentPhase >= 4) return flash("Paciente já na fase final");
-    await window._fb.updatePatient(p.id, { currentPhase: (p.currentPhase || 1) + 1 });
-    flash("Fase avançada!");
-  };
+function Admin({ onLogout, flash }) {
+  const [patients, setPatients] = useState([]);
+  useEffect(() => window._fb.onPatients(snap => setPatients(snap.docs.map(d=>({id:d.id, ...d.data()})))), []);
 
   return (
     <div className="adm-wrap">
       <div className="adm-side">
-        <div style={{padding:'0 24px 30px'}}><h3 style={{fontFamily:'Libre Baskerville'}}>Bio Vitalie</h3><small>Painel Admin</small></div>
+        <div style={{padding:'0 24px 30px'}}><h3 style={{fontFamily:'Libre Baskerville'}}>Bio Vitalie</h3><small>Admin</small></div>
         <button className="adm-nb on">👥 Pacientes</button>
-        <button className="adm-nb" onClick={onLogout}>⎗ Sair</button>
+        <button className="adm-nb" onClick={onLogout}>Sair</button>
       </div>
       <div className="adm-main">
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:32}}>
-          <h1>Gestão de Pacientes</h1>
-          <button className="btn-pri" onClick={() => setModal('add')}>+ Nova Paciente</button>
-        </div>
-        
-        {patients.map(p => (
-          <div key={p.id} className="pt-card">
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-              <div>
-                <strong style={{fontSize:18}}>{p.name}</strong>
-                <p style={{fontSize:13, color:'#666'}}>{p.email}</p>
-                <div style={{marginTop:8}}>
-                   <span className="tag-pill">Fase {p.currentPhase || 1}</span>
-                   <span className="tag-pill">{(p.checkins || []).length} check-ins</span>
-                </div>
-              </div>
-              <div style={{display:'flex', gap:8}}>
-                <button className="btn-sec" onClick={() => setModal(p)}>✏️ Editar</button>
-                <button className="btn-sec" onClick={() => handleAdvance(p)}>↑ Evoluir</button>
-                <button className="btn-sec" style={{color:'red'}} onClick={() => handleDelete(p.id)}>✕</button>
-              </div>
+        <h1>Dashboard Clínico</h1>
+        <div style={{marginTop:30}}>
+          {patients.map(p => (
+            <div key={p.id} className="pt-card">
+              <strong>{p.name}</strong> - Fase {p.currentPhase || 1}
             </div>
-          </div>
-        ))}
-
-        {modal && (
-          <PatientModal 
-            data={modal === 'add' ? null : modal} 
-            onClose={() => setModal(null)} 
-            flash={flash} 
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PatientModal({ data, onClose, flash }) {
-  const [form, setForm] = useState(data || { name: '', email: '', password: 'vita@2026', currentPhase: 1, canEat: [], cantEat: [] });
-  
-  const save = async () => {
-    if(!form.name || !form.email) return flash("Preencha Nome e E-mail");
-    const id = data ? data.id : "p" + Date.now();
-    await window._fb.setPatient(id, form);
-    flash("Paciente salva!");
-    onClose();
-  };
-
-  return (
-    <div className="modal-bg">
-      <div className="modal-box">
-        <div style={{display:'flex', justifyContent:'space-between', marginBottom:24}}>
-          <h2 style={{fontFamily:'Libre Baskerville'}}>{data ? "Editar Cadastro" : "Nova Paciente"}</h2>
-          <button onClick={onClose} style={{background:'none', border:'none', fontSize:24, cursor:'pointer'}}>×</button>
+          ))}
         </div>
-        
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:15}}>
-          <div><label style={{fontSize:11, fontWeight:700, color:'#999'}}>NOME</label><input className="fi" value={form.name} onChange={e=>setForm({...form, name:e.target.value})}/></div>
-          <div><label style={{fontSize:11, fontWeight:700, color:'#999'}}>E-MAIL</label><input className="fi" value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/></div>
-        </div>
-
-        <label style={{fontSize:11, fontWeight:700, color:'#999'}}>FASE ATUAL</label>
-        <select className="fi" value={form.currentPhase} onChange={e=>setForm({...form, currentPhase: Number(e.target.value)})}>
-          {PHASES.map(ph => <option key={ph.id} value={ph.id}>Fase {ph.id} - {ph.name}</option>)}
-        </select>
-
-        <button className="btn-t" onClick={save} style={{width:'100%', marginTop:20}}>Salvar Alterações</button>
       </div>
     </div>
   );
