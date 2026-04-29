@@ -8,6 +8,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyB8KlzpO2EGiyKon6gmG7C-KVDbYRg9ua8",
+  authDomain: "biovitalie-3d35b.firebaseapp.com",
+  projectId: "biovitalie-3d35b",
+  storageBucket: "biovitalie-3d35b.appspot.com",
+  messagingSenderId: "1028355606477",
+  appId: "1:1028355606477:web:8a37955c42171c7d89069d"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
@@ -667,41 +684,112 @@ function getPhaseContent(allItems, currentPhase, countPerPhase) {
   return result;
 }
 
-const STORE_KEY = 'vita_v3';
+// ── FIREBASE HELPERS ──
+const DEMO_PATIENT = {
+  id:'p1',name:'Ana Beatriz Costa',cpf:'111.111.111-11',email:'ana@email.com',password:'vita@2024',
+  dob:'1985-03-12',hormonalPhase:'Perimenopausa',
+  symptoms:['Ondas de calor','Insônia','Fadiga'],objectives:['Mais energia','Melhor sono'],
+  currentPhase:1,unlockedPhases:[1],
+  canEat:['Frango grelhado','Arroz integral','Brócolis','Ovos','Batata-doce'],
+  cantEat:['Glúten','Laticínios','Açúcar'],
+  supplements:[{name:'Vitamina D3 + K2',dose:'5000 UI/dia'},{name:'Magnésio Quelato',dose:'300mg/noite'},{name:'Ômega-3',dose:'2g/dia'}],
+  exams:[{name:'Perfil Hormonal Feminino',month:'Mês 1',icon:'◈'},{name:'Painel Tireoidiano',month:'Mês 1',icon:'◈'}],
+  reminders:[{id:'r1',title:'Check-in diário',desc:'Registre como você está se sentindo hoje',time:'20:00',done:false}],
+  checkins:[],stats:{exercises:0,meditations:0,recipes:0,checkins:0},
+};
 
-function seedPatients(){
-  try{ const s=localStorage.getItem(STORE_KEY); if(s) return JSON.parse(s); }catch{}
-  return [{
-    id:'p1',name:'Ana Beatriz Costa',cpf:'111.111.111-11',email:'ana@email.com',password:'vita@2024',
-    dob:'1985-03-12',hormonalPhase:'Perimenopausa',
-    symptoms:['Ondas de calor','Insônia','Fadiga'],objectives:['Mais energia','Melhor sono'],
-    currentPhase:1,unlockedPhases:[1],
-    canEat:['Frango grelhado','Arroz integral','Brócolis','Ovos','Batata-doce'],
-    cantEat:['Glúten','Laticínios','Açúcar'],
-    supplements:[{name:'Vitamina D3 + K2',dose:'5000 UI/dia'},{name:'Magnésio Quelato',dose:'300mg/noite'},{name:'Ômega-3',dose:'2g/dia'}],
-    exams:[{name:'Perfil Hormonal Feminino',month:'Mês 1',icon:'◈'},{name:'Painel Tireoidiano',month:'Mês 1',icon:'◈'}],
-    reminders:[{id:'r1',title:'Check-in diário',desc:'Registre como você está se sentindo hoje',time:'20:00',done:false}],
-    checkins:[],stats:{exercises:0,meditations:0,recipes:0,checkins:0},
-  }];
+async function loadPatientsFromFirestore(){
+  try{
+    const snap = await db.collection('patients').get();
+    if(snap.empty){
+      // seed demo patient on first run
+      await db.collection('patients').doc('p1').set(DEMO_PATIENT);
+      return [DEMO_PATIENT];
+    }
+    return snap.docs.map(d=>({...d.data(),id:d.id}));
+  }catch(e){
+    console.error('Firestore load error',e);
+    return [DEMO_PATIENT];
+  }
 }
-const savePatients = p => { try{ localStorage.setItem(STORE_KEY,JSON.stringify(p)); }catch{} };
+
+async function savePatientToFirestore(patient){
+  try{
+    const {id,...data}=patient;
+    await db.collection('patients').doc(id).set(data,{merge:true});
+  }catch(e){ console.error('Firestore save error',e); }
+}
+
+async function deletePatientFromFirestore(id){
+  try{ await db.collection('patients').doc(id).delete(); }catch(e){ console.error('Firestore delete error',e); }
+}
 
 // ── APP ──
 function App(){
-  const [patients,setPatients]=useState(seedPatients);
+  const [patients,setPatients]=useState([]);
+  const [loading,setLoading]=useState(true);
   const [user,setUser]=useState(()=>{
     try{ const s=localStorage.getItem('vita_session'); if(s) return JSON.parse(s); }catch{}
     return null;
   });
   const [toast,setToast]=useState(null);
   const flash=m=>{setToast(m);setTimeout(()=>setToast(null),2600);};
-  const setP=arr=>{ setPatients(arr); savePatients(arr); };
-  const updP=(id,d)=>setP(patients.map(p=>p.id===id?{...p,...d}:p));
+
+  // Load patients from Firestore on mount + subscribe to real-time updates
+  React.useEffect(()=>{
+    const unsub = db.collection('patients').onSnapshot(snap=>{
+      if(snap.empty){
+        // seed demo patient
+        db.collection('patients').doc('p1').set(DEMO_PATIENT).then(()=>{
+          setPatients([DEMO_PATIENT]);
+          setLoading(false);
+        });
+      } else {
+        setPatients(snap.docs.map(d=>({...d.data(),id:d.id})));
+        setLoading(false);
+      }
+    }, err=>{
+      console.error('Firestore listener error',err);
+      setPatients([DEMO_PATIENT]);
+      setLoading(false);
+    });
+    return ()=>unsub();
+  },[]);
+
+  const setP=arr=>{
+    setPatients(arr);
+    // sync all changed patients to Firestore
+    arr.forEach(p=>savePatientToFirestore(p));
+  };
+
+  const updP=(id,d)=>{
+    const updated=patients.map(p=>p.id===id?{...p,...d}:p);
+    setPatients(updated);
+    const changed=updated.find(p=>p.id===id);
+    if(changed) savePatientToFirestore(changed);
+  };
+
   const handleLogin=(u,remember)=>{ setUser(u); if(remember) localStorage.setItem('vita_session',JSON.stringify(u)); };
   const handleLogout=()=>{ localStorage.removeItem('vita_session'); setUser(null); };
 
+  // Also override delP to delete from Firestore
+  const delPatient=id=>{
+    if(!confirm('Remover esta paciente permanentemente?'))return;
+    setPatients(prev=>prev.filter(p=>p.id!==id));
+    deletePatientFromFirestore(id);
+    flash('Paciente removida');
+  };
+
+  if(loading) return (
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--bg)',gap:18}}>
+      <div style={{width:52,height:52,background:'var(--grad)',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:'0 8px 24px rgba(181,103,58,.3)',animation:'pop .5s both'}}>🌿</div>
+      <div style={{fontFamily:'Libre Baskerville,serif',fontSize:20,color:'var(--ink)'}}>Vita</div>
+      <div style={{fontSize:12,color:'var(--muted)',letterSpacing:'.12em',textTransform:'uppercase'}}>Carregando...</div>
+    </div>
+  );
+
   if(!user) return <>{React.createElement(Login,{patients,onLogin:handleLogin,flash})}{toast&&<div className="toast">{toast}</div>}</>;
-  if(user.type==='admin') return <>{React.createElement(Admin,{patients,setP,onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
+  if(user.type==='admin') return <>{React.createElement(Admin,{patients,setP,onLogout:handleLogout,flash,delPatient})}{toast&&<div className="toast">{toast}</div>}</>;
   const pat=patients.find(p=>p.id===user.id);
   if(!pat){ handleLogout(); return null; }
   return <>{React.createElement(PatientApp,{patient:pat,upd:d=>updP(pat.id,d),onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
@@ -714,17 +802,26 @@ function Login({patients,onLogin,flash}){
   const [pw,setPw]=useState('');
   const [remember,setRemember]=useState(true);
   const [err,setErr]=useState('');
+  const [logging,setLogging]=useState(false);
   const fmt=v=>{const n=v.replace(/\D/g,'').slice(0,11);return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').replace(/(\d{3})(\d{3})(\d{3})/,'$1.$2.$3').replace(/(\d{3})(\d{3})/,'$1.$2').replace(/(\d{3})/,'$1');};
-  const go=()=>{
+  const go=async()=>{
     setErr('');
     if(mode==='admin'){
       if(cpf==='admin'&&pw==='admin123'){ onLogin({type:'admin'},remember); return; }
       setErr('Usuário ou senha incorretos'); return;
     }
-    const pt=patients.find(p=>p.cpf===cpf);
-    if(!pt){ setErr('CPF não encontrado'); return; }
-    if(pt.password!==pw){ setErr('Senha incorreta'); return; }
-    onLogin({type:'patient',id:pt.id},remember);
+    setLogging(true);
+    try{
+      const snap = await db.collection('patients').where('cpf','==',cpf).limit(1).get();
+      if(snap.empty){ setErr('CPF não encontrado'); setLogging(false); return; }
+      const pt = {...snap.docs[0].data(), id: snap.docs[0].id};
+      if(pt.password!==pw){ setErr('Senha incorreta'); setLogging(false); return; }
+      onLogin({type:'patient',id:pt.id},remember);
+    }catch(e){
+      console.error('Login error',e);
+      setErr('Erro ao conectar. Verifique sua conexão.');
+    }
+    setLogging(false);
   };
   const back=()=>{ setMode(null); setCpf(''); setPw(''); setErr(''); };
 
@@ -764,7 +861,7 @@ function Login({patients,onLogin,flash}){
         <div className="lg-logotype"><div className="lg-emblem">🌸</div><div className="lg-brand">Bem-vinda<span>Acesse seu programa</span></div></div>
         <h1 className="lg-h1">Olá, <em>bom te ver</em></h1>
         <p className="lg-sub">Entre com seu CPF e senha para acessar seu programa personalizado</p>
-        <div className="fl"><label>CPF</label><input className="fi" placeholder="000.000.000-00" value={cpf} onChange={e=>setCpf(fmt(e.target.value))} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
+        <div className="fl"><label>CPF</label><input className="fi" placeholder="000.000.000-00" inputMode="numeric" value={cpf} onChange={e=>setCpf(fmt(e.target.value))} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
         <div className="fl"><label>Senha</label><input className="fi" type="password" placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div>
         <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,cursor:'pointer'}}>
           <div onClick={()=>setRemember(!remember)} style={{width:22,height:22,borderRadius:6,flexShrink:0,border:`2px solid ${remember?'var(--terra)':'var(--border)'}`,background:remember?'var(--terra)':'white',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',cursor:'pointer'}}>
@@ -773,7 +870,7 @@ function Login({patients,onLogin,flash}){
           <span style={{fontSize:13,color:'var(--ink2)',userSelect:'none'}}>Manter sessão aberta — não pedir login toda vez</span>
         </label>
         {err&&<div style={{background:'rgba(196,120,120,.1)',border:'1px solid rgba(196,120,120,.25)',borderRadius:10,padding:'10px 14px',fontSize:13,color:'var(--rose)',marginBottom:14}}>⚠ {err}</div>}
-        <button className="btn-t" onClick={go}>Entrar no programa</button>
+        <button className="btn-t" onClick={go} disabled={logging} style={{opacity:logging?.7:1}}>{logging?'Entrando...':"Entrar no programa"}</button>
         <div className="lg-dm" style={{marginTop:16}}>Demo · CPF 111.111.111-11 · senha vita@2024</div>
       </div>
     </div>
@@ -791,7 +888,7 @@ function Login({patients,onLogin,flash}){
         <p style={{fontSize:13,color:'rgba(255,255,255,.4)',marginBottom:28}}>Somente para profissionais autorizados</p>
         <div style={{marginBottom:16}}>
           <label style={{display:'block',fontSize:10,fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'rgba(255,255,255,.35)',marginBottom:8}}>Usuário</label>
-          <input style={{width:'100%',padding:'14px 18px',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:12,background:'rgba(255,255,255,.06)',fontFamily:'Jost,sans-serif',fontSize:14,color:'white',outline:'none'}} placeholder="admin" value={cpf} onChange={e=>setCpf(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus onFocus={e=>e.target.style.borderColor='rgba(196,150,90,.6)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,.1)'}/>
+          <input style={{width:'100%',padding:'14px 18px',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:12,background:'rgba(255,255,255,.06)',fontFamily:'Jost,sans-serif',fontSize:14,color:'white',outline:'none'}} placeholder="admin" value={cpf} onChange={e=>setCpf(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus autoCapitalize="none" autoCorrect="off" spellCheck="false" onFocus={e=>e.target.style.borderColor='rgba(196,150,90,.6)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,.1)'}/>
         </div>
         <div style={{marginBottom:16}}>
           <label style={{display:'block',fontSize:10,fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'rgba(255,255,255,.35)',marginBottom:8}}>Senha</label>
@@ -1440,16 +1537,21 @@ function PerfilTab({patient,upd,onLogout,flash}){
   );
 }
 
-function Admin({patients,setP,onLogout,flash}){
+function Admin({patients,setP,onLogout,flash,delPatient}){
   const [sec,setSec]=useState('dashboard');
   const [modal,setModal]=useState(null);
   const [detailP,setDetailP]=useState(null);
   const [advConfirm,setAdvConfirm]=useState(null);
 
-  const updP=(id,d)=>setP(patients.map(p=>p.id===id?{...p,...d}:p));
+  const updP=(id,d)=>{
+    const updated=patients.map(p=>p.id===id?{...p,...d}:p);
+    setP(updated);
+  };
 
   const saveNewPatient=(data)=>{
-    setP([...patients,{...data,id:'p'+Date.now()}]);
+    const newId='p'+Date.now();
+    const newPatient={...data,id:newId};
+    setP([...patients,newPatient]);
     flash('Paciente criada ✦');
   };
 
@@ -1458,11 +1560,7 @@ function Admin({patients,setP,onLogout,flash}){
     flash('Paciente atualizada ✦');
   };
 
-  const delP=id=>{
-    if(!confirm('Remover esta paciente permanentemente?'))return;
-    setP(patients.filter(p=>p.id!==id));
-    flash('Paciente removida');
-  };
+  const delP=id=>{ if(delPatient) delPatient(id); };
 
   const doAdvance=id=>{
     const p=patients.find(x=>x.id===id);
