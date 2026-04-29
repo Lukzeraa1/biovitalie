@@ -798,12 +798,12 @@ function App(){
 // ── LOGIN ──
 function Login({patients,onLogin,flash}){
   const [mode,setMode]=useState(null);
+  const [email,setEmail]=useState('');
   const [cpf,setCpf]=useState('');
   const [pw,setPw]=useState('');
   const [remember,setRemember]=useState(true);
   const [err,setErr]=useState('');
   const [logging,setLogging]=useState(false);
-  const fmt=v=>{const n=v.replace(/\D/g,'').slice(0,11);return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').replace(/(\d{3})(\d{3})(\d{3})/,'$1.$2.$3').replace(/(\d{3})(\d{3})/,'$1.$2').replace(/(\d{3})/,'$1');};
   const go=async()=>{
     setErr('');
     if(mode==='admin'){
@@ -812,8 +812,8 @@ function Login({patients,onLogin,flash}){
     }
     setLogging(true);
     try{
-      const snap = await db.collection('patients').where('cpf','==',cpf).limit(1).get();
-      if(snap.empty){ setErr('CPF não encontrado'); setLogging(false); return; }
+      const snap = await db.collection('patients').where('email','==',email.trim().toLowerCase()).limit(1).get();
+      if(snap.empty){ setErr('E-mail não encontrado'); setLogging(false); return; }
       const pt = {...snap.docs[0].data(), id: snap.docs[0].id};
       if(pt.password!==pw){ setErr('Senha incorreta'); setLogging(false); return; }
       onLogin({type:'patient',id:pt.id},remember);
@@ -823,7 +823,7 @@ function Login({patients,onLogin,flash}){
     }
     setLogging(false);
   };
-  const back=()=>{ setMode(null); setCpf(''); setPw(''); setErr(''); };
+  const back=()=>{ setMode(null); setEmail(''); setCpf(''); setPw(''); setErr(''); };
 
   if(!mode) return (
     <div className="lg-bg" style={{flexDirection:'column',gap:0}}>
@@ -860,8 +860,8 @@ function Login({patients,onLogin,flash}){
         <button onClick={back} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontFamily:'Jost,sans-serif',fontSize:13,marginBottom:28,padding:0,display:'flex',alignItems:'center',gap:6}}>← Voltar</button>
         <div className="lg-logotype"><div className="lg-emblem">🌸</div><div className="lg-brand">Bem-vinda<span>Acesse seu programa</span></div></div>
         <h1 className="lg-h1">Olá, <em>bom te ver</em></h1>
-        <p className="lg-sub">Entre com seu CPF e senha para acessar seu programa personalizado</p>
-        <div className="fl"><label>CPF</label><input className="fi" placeholder="000.000.000-00" inputMode="numeric" value={cpf} onChange={e=>setCpf(fmt(e.target.value))} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
+        <p className="lg-sub">Entre com seu e-mail e senha para acessar seu programa personalizado</p>
+        <div className="fl"><label>E-mail</label><input className="fi" placeholder="seuemail@email.com" type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus autoCapitalize="none" autoCorrect="off"/></div>
         <div className="fl"><label>Senha</label><input className="fi" type="password" placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div>
         <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,cursor:'pointer'}}>
           <div onClick={()=>setRemember(!remember)} style={{width:22,height:22,borderRadius:6,flexShrink:0,border:`2px solid ${remember?'var(--terra)':'var(--border)'}`,background:remember?'var(--terra)':'white',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',cursor:'pointer'}}>
@@ -871,7 +871,7 @@ function Login({patients,onLogin,flash}){
         </label>
         {err&&<div style={{background:'rgba(196,120,120,.1)',border:'1px solid rgba(196,120,120,.25)',borderRadius:10,padding:'10px 14px',fontSize:13,color:'var(--rose)',marginBottom:14}}>⚠ {err}</div>}
         <button className="btn-t" onClick={go} disabled={logging} style={{opacity:logging?.7:1}}>{logging?'Entrando...':"Entrar no programa"}</button>
-        <div className="lg-dm" style={{marginTop:16}}>Demo · CPF 111.111.111-11 · senha vita@2024</div>
+        <div className="lg-dm" style={{marginTop:16}}>Demo · ana@email.com · senha vita@2024</div>
       </div>
     </div>
   );
@@ -2094,7 +2094,7 @@ function PatientModal({patient,onClose,onSave}){
   const doSave=()=>{
     if(!name||!cpf||!email){alert('Nome, CPF e email são obrigatórios');return;}
     onSave({
-      name,cpf,email,password:pw,currentPhase:+phase,
+      name,cpf,email:email.trim().toLowerCase(),password:pw,currentPhase:+phase,
       unlockedPhases:Array.from({length:+phase},(_,i)=>i+1),
       canEat:can,cantEat:cant,supplements:suppl,exams,
       exercises:patient?.exercises||[],meditations:patient?.meditations||[],recipes:patient?.recipes||[],
