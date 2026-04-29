@@ -36,6 +36,7 @@
   };
 </script>
 <style>
+/* ESTILOS UNIFICADOS */
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
   --ink:#1c1712;--ink2:#3d3529;--muted:#a09181;
@@ -43,24 +44,37 @@
   --terra:#b5673a;--terra2:#d4845a;--grad:linear-gradient(135deg,#b5673a,#c4965a);
   --sh-md:0 8px 32px rgba(28,23,18,.1);--sh-lg:0 20px 60px rgba(28,23,18,.15);
 }
-body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;}
-.lg-bg{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
-.lg-card{background:var(--card);border-radius:28px;padding:40px;width:100%;max-width:400px;box-shadow:var(--sh-lg);border:1px solid #f0e8df;}
-.fi{width:100%;padding:14px;margin-bottom:12px;border-radius:12px;border:1.5px solid var(--border);outline:none;font-family:inherit;}
-.btn-t{width:100%;padding:15px;background:var(--grad);border:none;border-radius:12px;color:white;font-weight:600;cursor:pointer;}
+body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased;}
+
+/* SHELL PACIENTE */
+.shell{max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);}
+.shell-body{flex:1;overflow-y:auto;padding-bottom:100px;}
+.tab-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fdf8f2;border-top:1px solid var(--border2);display:flex;padding:12px 0;z-index:100;}
+.tab-item{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;cursor:pointer;color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:600;}
+.tab-item.on{color:var(--terra);}
+
+/* ADMIN */
 .adm-wrap{display:flex;min-height:100vh;}
 .adm-side{width:230px;background:var(--ink);color:white;padding:30px 0;flex-shrink:0;position:sticky;top:0;height:100vh;}
 .adm-main{flex:1;background:#f5f0ea;padding:40px;overflow-y:auto;}
 .adm-nb{width:100%;padding:14px 24px;background:none;border:none;color:rgba(255,255,255,0.6);text-align:left;cursor:pointer;font-family:inherit;}
 .adm-nb.on{background:rgba(255,255,255,0.05);color:white;border-left:4px solid var(--terra);}
+
+/* CARDS & MODALS */
+.lg-card{background:var(--card);border-radius:28px;padding:40px;width:100%;max-width:400px;box-shadow:var(--sh-lg);border:1px solid #f0e8df;}
 .pt-card{background:white;padding:24px;border-radius:20px;margin-bottom:16px;box-shadow:var(--sh-sm);border:1px solid #e8dfd4;}
-.btn-pri{background:var(--grad);color:white;border:none;padding:10px 18px;border-radius:10px;font-weight:600;cursor:pointer;}
+.fi{width:100%;padding:14px;margin-bottom:12px;border-radius:12px;border:1.5px solid var(--border);outline:none;font-family:inherit;}
+.btn-t{width:100%;padding:15px;background:var(--grad);border:none;border-radius:12px;color:white;font-weight:600;cursor:pointer;}
+.btn-pri{background:var(--grad);color:white;border:none;padding:12px 20px;border-radius:12px;font-weight:600;cursor:pointer;box-shadow: 0 4px 12px rgba(181,103,58,0.3);}
 .btn-sec{background:var(--bg);color:var(--ink);border:1px solid var(--border);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:12px;}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
-.modal-box{background:#fdf8f2;width:100%;max-width:600px;border-radius:24px;padding:32px;max-height:90vh;overflow-y:auto;box-shadow:var(--sh-lg);}
-.toast{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:var(--ink);color:white;padding:12px 24px;border-radius:50px;z-index:2000;}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:15px;}
 .tag-pill{background:rgba(181,103,58,0.1);color:var(--terra);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px;margin:2px;}
+.water-cup{width:34px;height:34px;border-radius:9px;border:1.5px solid #4a90d933;display:inline-flex;align-items:center;justify-content:center;margin:2px;cursor:pointer;font-size:16px;}
+.water-cup.filled{background:#4a90d922;border-color:#4a90d9;}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
+.modal-box{background:#fdf8f2;width:100%;max-width:600px;border-radius:24px;padding:32px;max-height:90vh;overflow-y:auto;}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:white;padding:12px 24px;border-radius:50px;z-index:2000;}
+.prog-bar{width:100%;height:8px;background:#eee;border-radius:10px;margin-top:10px;overflow:hidden;}
+.prog-fill{height:100%;background:var(--grad);transition:width 0.4s;}
 </style>
 </head>
 <body>
@@ -70,10 +84,16 @@ body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-hei
 const { useState, useEffect } = React;
 
 const PHASES = [
-  {id:1, name:'Autoconhecimento', months:'1–3'},
-  {id:2, name:'Desparasitação', months:'4–6'},
-  {id:3, name:'Detoxificação', months:'7–9'},
-  {id:4, name:'Energização', months:'10–12'},
+  {id:1, name:'Autoconhecimento', months:'1–3', icon:'✦', days:90, desc:'Mapeamento de sintomas e entendimento do corpo.'},
+  {id:2, name:'Desparasitação', months:'4–6', icon:'◈', days:90, desc:'Limpeza profunda e remoção de toxinas.'},
+  {id:3, name:'Detoxificação', months:'7–9', icon:'◇', days:90, desc:'Purificação do fígado e intestino.'},
+  {id:4, name:'Energização', months:'10–12', icon:'◉', days:90, desc:'Reconstrução celular e vitalidade.'},
+];
+
+const ALL_EXERCISES = [
+  {phase:1, name:'Caminhada Consciente', duration:'30 min', icon:'🚶‍♀️'},
+  {phase:1, name:'Yoga Restaurativa', duration:'40 min', icon:'🧘‍♀️'},
+  {phase:2, name:'Massagem Abdominal', duration:'15 min', icon:'🤲'}
 ];
 
 function App() {
@@ -93,9 +113,10 @@ function App() {
           setAuthState('admin');
         });
       } else {
-        const snap = await window._fb.getPatient(user.uid);
-        if(snap.exists) { setPatient({id:snap.id, ...snap.data()}); setAuthState('patient'); }
-        else setAuthState('out');
+        window._fb.onPatient(user.uid, snap => {
+          if(snap.exists) { setPatient({id:snap.id, ...snap.data()}); setAuthState('patient'); }
+          else setAuthState('out');
+        });
       }
     });
     return () => unsub();
@@ -107,7 +128,7 @@ function App() {
     <>
       {authState==='out' && <Login flash={flash}/>}
       {authState==='admin' && <Admin patients={patients} onLogout={()=>window._fb.signOut()} flash={flash}/>}
-      {authState==='patient' && <div style={{padding:50}}>Área do Paciente Online (Funcionalidades Restauradas)</div>}
+      {authState==='patient' && patient && <PatientApp patient={patient} onLogout={()=>window._fb.signOut()} flash={flash}/>}
       {toast && <div className="toast">{toast}</div>}
     </>
   );
@@ -132,8 +153,70 @@ function Login({ flash }) {
   );
 }
 
+// ÁREA DO PACIENTE RESTAURADA
+function PatientApp({ patient, onLogout, flash }) {
+  const [tab, setTab] = useState('home');
+  const todayStr = new Date().toISOString().split('T')[0];
+  const waterKey = `water_${patient.id}_${todayStr}`;
+  const [water, setWater] = useState(() => Number(localStorage.getItem(waterKey) || 0));
+
+  const addWater = () => {
+    const n = Math.min(water + 1, 12);
+    setWater(n);
+    localStorage.setItem(waterKey, n);
+    if(n === 8) flash('🎉 Meta de 8 copos atingida!');
+  };
+
+  const phase = PHASES.find(p => p.id === (patient.currentPhase || 1)) || PHASES[0];
+  const checkins = patient.checkins || [];
+  const progressPct = Math.min(Math.round((checkins.length / phase.days) * 100), 100);
+
+  return (
+    <div className="shell">
+      <div className="shell-body">
+        <div style={{padding:'40px 24px 20px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <div><p style={{fontSize:12, color:'#999'}}>BEM-VINDA</p><h2 style={{fontFamily:'Libre Baskerville'}}>{patient.name?.split(' ')[0]}!</h2></div>
+          <div style={{width:44, height:44, borderRadius:'50%', background:'var(--grad)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600}}>{patient.name?.[0]}</div>
+        </div>
+
+        <div className="pt-card" style={{margin:'0 24px 20px', background:'var(--grad)', color:'white', border:'none'}}>
+           <p style={{fontWeight:600}}>Check-in do dia</p>
+           <p style={{fontSize:12, opacity:0.9}}>Registre como você está hoje</p>
+        </div>
+
+        <div style={{padding:'0 24px'}}>
+           <div className="pt-card">
+              <p style={{fontSize:11, fontWeight:700, color: 'var(--terra)', textTransform:'uppercase'}}>Fase {phase.id}: {phase.name}</p>
+              <div className="prog-bar"><div className="prog-fill" style={{width: `${progressPct}%`}}></div></div>
+              <p style={{fontSize:12, color:'#666', marginTop:8}}>{progressPct}% concluído • {checkins.length}/{phase.days} dias</p>
+           </div>
+
+           <div className="pt-card" style={{border:'1.5px solid #4a90d933'}}>
+              <div style={{display:'flex', justifyContent:'space-between', marginBottom:12}}>
+                <strong>Água de hoje</strong>
+                <span style={{fontSize:13, color:'#4a90d9', fontWeight:600}}>{water}/12 copos</span>
+              </div>
+              <div style={{marginBottom:15}}>
+                {Array.from({length:12}).map((_, i) => (
+                  <div key={i} className={`water-cup ${i < water ? 'filled' : ''}`} onClick={addWater}>💧</div>
+                ))}
+              </div>
+              <button onClick={addWater} className="btn-t" style={{padding:10, fontSize:12, background:'#4a90d9', width:'100%'}}>+ Registrar copo</button>
+           </div>
+        </div>
+      </div>
+
+      <nav className="tab-bar">
+        <button className={`tab-item ${tab==='home'?'on':''}`} onClick={()=>setTab('home')}>Início</button>
+        <button className="tab-item" onClick={onLogout}>Sair</button>
+      </nav>
+    </div>
+  );
+}
+
+// ÁREA DO ADMIN RESTAURADA
 function Admin({ patients, onLogout, flash }) {
-  const [modal, setModal] = useState(null); // 'add' ou paciente_obj
+  const [modal, setModal] = useState(null); 
 
   const handleDelete = async (id) => {
     if(confirm("Deseja remover esta paciente permanentemente?")) {
@@ -143,9 +226,9 @@ function Admin({ patients, onLogout, flash }) {
   };
 
   const handleAdvance = async (p) => {
-    if(p.currentPhase >= 4) return flash("Já está na última fase");
+    if(p.currentPhase >= 4) return flash("Paciente já na fase final");
     await window._fb.updatePatient(p.id, { currentPhase: (p.currentPhase || 1) + 1 });
-    flash("Fase avançada com sucesso!");
+    flash("Fase avançada!");
   };
 
   return (
@@ -163,13 +246,13 @@ function Admin({ patients, onLogout, flash }) {
         
         {patients.map(p => (
           <div key={p.id} className="pt-card">
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
               <div>
                 <strong style={{fontSize:18}}>{p.name}</strong>
                 <p style={{fontSize:13, color:'#666'}}>{p.email}</p>
                 <div style={{marginTop:8}}>
                    <span className="tag-pill">Fase {p.currentPhase || 1}</span>
-                   <span className="tag-pill">{p.checkins?.length || 0} check-ins</span>
+                   <span className="tag-pill">{(p.checkins || []).length} check-ins</span>
                 </div>
               </div>
               <div style={{display:'flex', gap:8}}>
@@ -194,59 +277,35 @@ function Admin({ patients, onLogout, flash }) {
 }
 
 function PatientModal({ data, onClose, flash }) {
-  const [form, setForm] = useState(data || {
-    name: '', email: '', password: '', currentPhase: 1,
-    canEat: [], cantEat: [], supplements: [], exams: []
-  });
+  const [form, setForm] = useState(data || { name: '', email: '', password: 'vita@2026', currentPhase: 1, canEat: [], cantEat: [] });
   
   const save = async () => {
-    if(!form.name || !form.email) return flash("Nome e E-mail obrigatórios");
+    if(!form.name || !form.email) return flash("Preencha Nome e E-mail");
     const id = data ? data.id : "p" + Date.now();
     await window._fb.setPatient(id, form);
-    flash("Dados salvos com sucesso!");
+    flash("Paciente salva!");
     onClose();
-  };
-
-  const addTag = (key, val) => {
-    if(!val) return;
-    setForm({...form, [key]: [...(form[key] || []), val]});
   };
 
   return (
     <div className="modal-bg">
       <div className="modal-box">
-        <div style={{display:'flex', justifyContent:'space-between', marginBottom:20}}>
-          <h2>{data ? "Editar Paciente" : "Nova Paciente"}</h2>
+        <div style={{display:'flex', justifyContent:'space-between', marginBottom:24}}>
+          <h2 style={{fontFamily:'Libre Baskerville'}}>{data ? "Editar Cadastro" : "Nova Paciente"}</h2>
           <button onClick={onClose} style={{background:'none', border:'none', fontSize:24, cursor:'pointer'}}>×</button>
         </div>
         
-        <div className="grid2">
-          <div><label style={{fontSize:11, fontWeight:700}}>NOME</label><input className="fi" value={form.name} onChange={e=>setForm({...form, name:e.target.value})}/></div>
-          <div><label style={{fontSize:11, fontWeight:700}}>E-MAIL</label><input className="fi" value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/></div>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:15}}>
+          <div><label style={{fontSize:11, fontWeight:700, color:'#999'}}>NOME</label><input className="fi" value={form.name} onChange={e=>setForm({...form, name:e.target.value})}/></div>
+          <div><label style={{fontSize:11, fontWeight:700, color:'#999'}}>E-MAIL</label><input className="fi" value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/></div>
         </div>
 
-        <div style={{marginTop:15}}>
-          <label style={{fontSize:11, fontWeight:700}}>FASE INICIAL</label>
-          <select className="fi" value={form.currentPhase} onChange={e=>setForm({...form, currentPhase: Number(e.target.value)})}>
-            {PHASES.map(ph => <option key={ph.id} value={ph.id}>Fase {ph.id} - {ph.name}</option>)}
-          </select>
-        </div>
+        <label style={{fontSize:11, fontWeight:700, color:'#999'}}>FASE ATUAL</label>
+        <select className="fi" value={form.currentPhase} onChange={e=>setForm({...form, currentPhase: Number(e.target.value)})}>
+          {PHASES.map(ph => <option key={ph.id} value={ph.id}>Fase {ph.id} - {ph.name}</option>)}
+        </select>
 
-        <hr style={{margin:'20px 0', opacity:0.2}}/>
-        
-        <h3>Protocolo Alimentar</h3>
-        <div className="grid2" style={{marginTop:10}}>
-          <div>
-            <input className="fi" placeholder="Pode comer..." onKeyDown={e => e.key === 'Enter' && (addTag('canEat', e.target.value), e.target.value='')}/>
-            {form.canEat?.map((t,i) => <span key={i} className="tag-pill">{t}</span>)}
-          </div>
-          <div>
-            <input className="fi" placeholder="Evitar..." onKeyDown={e => e.key === 'Enter' && (addTag('cantEat', e.target.value), e.target.value='')}/>
-            {form.cantEat?.map((t,i) => <span key={i} className="tag-pill" style={{color:'red'}}>{t}</span>)}
-          </div>
-        </div>
-
-        <button className="btn-t" onClick={save} style={{width:'100%', marginTop:30}}>Salvar Paciente</button>
+        <button className="btn-t" onClick={save} style={{width:'100%', marginTop:20}}>Salvar Alterações</button>
       </div>
     </div>
   );
