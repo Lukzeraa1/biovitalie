@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<!-- Firebase compat — funciona com GitHub Pages -->
+<!-- Firebase compat — funciona no GitHub Pages -->
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore-compat.js"></script>
@@ -23,21 +23,18 @@
   });
   const _auth = firebase.auth();
   const _db   = firebase.firestore();
-  // Persist login across sessions
-  _auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
   window._fb = {
-    auth: _auth,
-    db: _db,
-    signInWithEmailAndPassword: (auth, email, pw) => auth.signInWithEmailAndPassword(email, pw),
-    signOut: (auth) => auth.signOut(),
-    onAuthStateChanged: (auth, cb) => auth.onAuthStateChanged(cb),
-    getDoc: (docRef) => docRef.get(),
-    getDocs: (colRef) => colRef.get(),
-    setDoc: (docRef, data) => docRef.set(data),
-    updateDoc: (docRef, data) => docRef.update(data),
-    deleteDoc: (docRef) => docRef.delete(),
-    doc: (db, col, id) => db.collection(col).doc(id),
-    collection: (db, col) => db.collection(col)
+    signIn:        (e,p)   => _auth.signInWithEmailAndPassword(e,p),
+    signOut:       ()      => _auth.signOut(),
+    onAuth:        (cb)    => _auth.onAuthStateChanged(cb),
+    currentEmail:  ()      => _auth.currentUser ? _auth.currentUser.email : null,
+    currentUid:    ()      => _auth.currentUser ? _auth.currentUser.uid : null,
+    getPatient:    (id)    => _db.collection('patients').doc(id).get(),
+    setPatient:    (id,d)  => _db.collection('patients').doc(id).set(d,{merge:true}),
+    updatePatient: (id,d)  => _db.collection('patients').doc(id).update(d),
+    deletePatient: (id)    => _db.collection('patients').doc(id).delete(),
+    onPatients:    (cb)    => _db.collection('patients').onSnapshot(cb),
+    onPatient:     (id,cb) => _db.collection('patients').doc(id).onSnapshot(cb),
   };
 </script>
 <style>
@@ -701,99 +698,85 @@ function getPhaseContent(allItems, currentPhase, countPerPhase) {
   return result;
 }
 
-// ── FIREBASE HELPERS ──
+// ── FIREBASE HELPERS (compat API) ──
 const fb = () => window._fb;
 
-async function fbGetPatients(){
-  const {db,collection,getDocs}=fb();
-  const snap=await getDocs(collection(db,'patients'));
-  return snap.docs.map(d=>({id:d.id,...d.data()}));
+async function fbUpdatePatient(id, data){
+  await fb().updatePatient(id, data);
 }
-
-async function fbSavePatient(patient){
-  const {db,doc,setDoc}=fb();
-  const {id,...data}=patient;
-  await setDoc(doc(db,'patients',id),data);
-}
-
-async function fbUpdatePatient(id,data){
-  const {db,doc,updateDoc}=fb();
-  await updateDoc(doc(db,'patients',id),data);
-}
-
 async function fbDeletePatient(id){
-  const {db,doc,deleteDoc}=fb();
-  await deleteDoc(doc(db,'patients',id));
-}
-
-async function fbGetPatient(id){
-  const {db,doc,getDoc}=fb();
-  const snap=await getDoc(doc(db,'patients',id));
-  if(!snap.exists())return null;
-  return {id:snap.id,...snap.data()};
+  await fb().deletePatient(id);
 }
 
 // ── APP ROOT ──
 function App(){
   const {useState,useEffect}=React;
-  const [authState,setAuthState]=useState('loading'); // 'loading'|'out'|'admin'|'patient'
+  const [authState,setAuthState]=useState('loading');
   const [patientId,setPatientId]=useState(null);
   const [patient,setPatient]=useState(null);
   const [patients,setPatients]=useState([]);
   const [toast,setToast]=useState(null);
   const flash=m=>{setToast(m);setTimeout(()=>setToast(null),2600);};
 
-  // Listen to Firebase auth
+  // Auth listener
   useEffect(()=>{
-    const {auth,onAuthStateChanged,db,doc,getDoc,collection,getDocs}=fb();
-    const unsub=onAuthStateChanged(auth,async fireUser=>{
-      if(!fireUser){setAuthState('out');return;}
-      // Check if admin
+    const unsub = fb().onAuth(async fireUser=>{
+      if(!fireUser){ setAuthState('out'); return; }
       if(fireUser.email==='admin@biovitalie.com'){
-        // Load all patients
-        const snap=await getDocs(collection(db,'patients'));
-        setPatients(snap.docs.map(d=>({id:d.id,...d.data()})));
+        // Real-time patients listener for admin
         setAuthState('admin');
       } else {
-        // Load patient by uid
-        const snap=await getDoc(doc(db,'patients',fireUser.uid));
-        if(snap.exists()){
-          setPatient({id:snap.id,...snap.data()});
-          setPatientId(snap.id);
-          setAuthState('patient');
-        } else {
-          setAuthState('out');
-        }
+        // Load patient doc by uid
+        try {
+          const snap = await fb().getPatient(fireUser.uid);
+          if(snap.exists){
+            setPatient({id:snap.id, ...snap.data()});
+            setPatientId(snap.id);
+            setAuthState('patient');
+          } else {
+            setAuthState('out');
+          }
+        } catch(e){ setAuthState('out'); }
       }
     });
     return ()=>unsub();
   },[]);
 
+  // Real-time listener for admin patients
+  useEffect(()=>{
+    if(authState!=='admin') return;
+    const unsub = fb().onPatients(snap=>{
+      setPatients(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return ()=>unsub();
+  },[authState]);
+
+  // Real-time listener for patient data
+  useEffect(()=>{
+    if(authState!=='patient'||!patientId) return;
+    const unsub = fb().onPatient(patientId, snap=>{
+      if(snap.exists) setPatient({id:snap.id,...snap.data()});
+    });
+    return ()=>unsub();
+  },[authState, patientId]);
+
   const handleLogout=async()=>{
-    const {auth,signOut}=fb();
-    await signOut(auth);
+    await fb().signOut();
     setAuthState('out');
     setPatient(null);
     setPatients([]);
   };
 
-  // Update patient data locally + in Firebase
   const updPatient=async(data)=>{
-    const merged={...patient,...data};
-    setPatient(merged);
-    try{ await fbUpdatePatient(patientId,data); }
+    // Optimistic update
+    setPatient(prev=>({...prev,...data}));
+    try{ await fbUpdatePatient(patientId, data); }
     catch(e){ flash('Erro ao salvar — verifique a conexão'); }
   };
 
-  // Admin: update a patient
   const updAdminPatient=async(id,data)=>{
-    setPatients(prev=>prev.map(p=>p.id===id?{...p,...data}:p));
-    try{ await fbUpdatePatient(id,data); }
+    try{ await fbUpdatePatient(id,data); flash('Salvo ✦'); }
     catch(e){ flash('Erro ao salvar'); }
-  };
-
-  const setAdminPatients=async(newList)=>{
-    setPatients(newList);
   };
 
   if(authState==='loading') return (
@@ -809,7 +792,7 @@ function App(){
   if(authState==='out') return <>{React.createElement(Login,{flash})}{toast&&<div className="toast">{toast}</div>}</>;
 
   if(authState==='admin') return <>
-    {React.createElement(Admin,{patients,setP:setAdminPatients,updP:updAdminPatient,onLogout:handleLogout,flash})}
+    {React.createElement(Admin,{patients,setP:setPatients,updP:updAdminPatient,onLogout:handleLogout,flash})}
     {toast&&<div className="toast">{toast}</div>}
   </>;
 
@@ -821,6 +804,7 @@ function App(){
   return null;
 }
 
+
 function Login({flash}){
   const [mode,setMode]=useState(null);
   const [email,setEmail]=useState('');
@@ -830,14 +814,13 @@ function Login({flash}){
 
   const go=async()=>{
     setErr('');setLoading(true);
-    const {auth,signInWithEmailAndPassword}=fb();
     try{
-      await signInWithEmailAndPassword(auth,email,pw);
-      // onAuthStateChanged in App will handle the rest
+      await fb().signIn(email,pw);
+      // onAuth listener in App handles the rest
     }catch(e){
-      const msg=e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found'
-        ?'E-mail ou senha incorretos'
-        :'Erro ao entrar. Verifique sua conexão.';
+      const msg = e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found'
+        ? 'E-mail ou senha incorretos'
+        : 'Erro ao entrar. Verifique sua conexão.';
       setErr(msg);
     }
     setLoading(false);
@@ -1808,33 +1791,28 @@ function Admin({patients,setP,updP,onLogout,flash}){
   },[]);
 
   const saveNewPatient=async(data)=>{
-    const {db,doc,setDoc}=fb();
-    const {auth,signInWithEmailAndPassword}=fb();
-    // Create Firebase Auth user for patient
     try{
-      // Use admin SDK workaround: create user via REST API isn't possible client-side
-      // Instead we'll use a dedicated email pattern and store credentials in Firestore
       const id='p'+Date.now();
-      await setDoc(doc(db,'patients',id),{...data,createdAt:new Date().toISOString()});
+      await fb().setPatient(id,{...data, id, createdAt:new Date().toISOString()});
       flash(`Paciente criada ✦ — envie o e-mail e senha para ela`);
     }catch(e){
-      flash('Erro ao criar paciente: '+e.message);
+      flash('Erro ao criar: '+e.message);
     }
   };
 
   const saveEditPatient=async(id,data)=>{
     try{
-      await fbUpdatePatient(id,data);
+      await fb().updatePatient(id,data);
       flash('Paciente atualizada ✦');
-    }catch(e){flash('Erro ao salvar');}
+    }catch(e){ flash('Erro ao salvar: '+e.message); }
   };
 
   const delP=async id=>{
     if(!confirm('Remover esta paciente permanentemente?'))return;
     try{
-      await fbDeletePatient(id);
+      await fb().deletePatient(id);
       flash('Paciente removida');
-    }catch(e){flash('Erro ao remover');}
+    }catch(e){ flash('Erro ao remover'); }
   };
 
   const doAdvance=async id=>{
@@ -1844,7 +1822,7 @@ function Admin({patients,setP,updP,onLogout,flash}){
     const ul=[...(p.unlockedPhases||[1])];
     if(!ul.includes(np))ul.push(np);
     try{
-      await fbUpdatePatient(id,{currentPhase:np,unlockedPhases:ul});
+      await fb().updatePatient(id,{currentPhase:np,unlockedPhases:ul});
       flash(`✦ Fase ${np} liberada para ${p.name.split(' ')[0]}!`);
     }catch(e){flash('Erro ao avançar fase');}
     setAdvConfirm(null);
