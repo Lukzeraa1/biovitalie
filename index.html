@@ -726,9 +726,15 @@ const fbDeletePatient = id => window.__vita?.deletePatient(id);
 
 // ── APP ── Firebase-powered
 function App(){
-  const [patients,setPatients]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [fbError,setFbError]=useState(null);
+  // Inicia com localStorage como fallback imediato
+  const [patients,setPatients]=useState(()=>{
+    try{
+      const s=localStorage.getItem('vita_v3_cache');
+      if(s) return JSON.parse(s);
+    }catch{}
+    return [SEED_PATIENT];
+  });
+  const [fbReady,setFbReady]=useState(false);
   const [user,setUser]=useState(()=>{
     try{ const s=localStorage.getItem('vita_session'); if(s) return JSON.parse(s); }catch{}
     return null;
@@ -736,30 +742,37 @@ function App(){
   const [toast,setToast]=useState(null);
   const flash=m=>{setToast(m);setTimeout(()=>setToast(null),2600);};
 
-  // ── Bootstrap: wait for Firebase module, then subscribe to real-time updates ──
+  // ── Bootstrap Firebase em background — app já abre sem esperar ──
   useEffect(()=>{
     const init = async () => {
       try {
-        const data = await window.__vita.loadPatients();
-        // If Firestore is empty, seed the demo patient
+        // Tenta conectar ao Firestore
+        const data = await Promise.race([
+          window.__vita.loadPatients(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+        ]);
         if(data.length === 0){
           await window.__vita.savePatient(SEED_PATIENT);
           setPatients([SEED_PATIENT]);
+          localStorage.setItem('vita_v3_cache', JSON.stringify([SEED_PATIENT]));
         } else {
           setPatients(data);
+          localStorage.setItem('vita_v3_cache', JSON.stringify(data));
         }
-        setLoading(false);
-        // Subscribe to real-time changes (syncs across devices automatically)
-        window.__vita.subscribePatients(updated => setPatients(updated));
+        setFbReady(true);
+        // Sincronização em tempo real
+        window.__vita.subscribePatients(updated => {
+          setPatients(updated);
+          localStorage.setItem('vita_v3_cache', JSON.stringify(updated));
+        });
       } catch(e){
-        console.error('Firebase error:', e);
-        setFbError('Não foi possível conectar ao banco de dados. Verifique a internet e as regras do Firestore.');
-        setLoading(false);
+        console.warn('Firebase indisponível, usando cache local:', e.message);
+        // App continua funcionando com localStorage mesmo sem Firebase
       }
     };
+    // Dispara imediatamente se Firebase já carregou, senão aguarda
     if(window.__vitaReady){ init(); }
-    else { window.addEventListener('vitaReady', init, {once:true}); }
-    return () => window.removeEventListener('vitaReady', init);
+    else { window.addEventListener('vitaReady', ()=>init(), {once:true}); }
   },[]);
 
   // ── Persist a single patient to Firestore ──
@@ -779,17 +792,6 @@ function App(){
 
   const handleLogin=(u,remember)=>{ setUser(u); if(remember) localStorage.setItem('vita_session',JSON.stringify(u)); };
   const handleLogout=()=>{ localStorage.removeItem('vita_session'); setUser(null); };
-
-  if(loading) return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--bg)',gap:16}}>
-      <div style={{width:52,height:52,background:'var(--grad)',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,boxShadow:'0 6px 20px rgba(181,103,58,.3)'}}>🌿</div>
-      <div style={{fontFamily:'Libre Baskerville,serif',fontSize:20,color:'var(--ink)'}}>Bio Vitalie</div>
-      {fbError
-        ? <div style={{maxWidth:340,textAlign:'center',fontSize:13,color:'var(--rose)',background:'rgba(196,120,120,.08)',border:'1px solid rgba(196,120,120,.2)',borderRadius:14,padding:'14px 20px'}}>{fbError}</div>
-        : <div style={{fontSize:13,color:'var(--muted)',letterSpacing:'.08em'}}>Conectando ao banco de dados…</div>
-      }
-    </div>
-  );
 
   if(!user) return <>{React.createElement(Login,{patients,onLogin:handleLogin,flash})}{toast&&<div className="toast">{toast}</div>}</>;
   if(user.type==='admin') return <>{React.createElement(Admin,{patients,setP,onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
