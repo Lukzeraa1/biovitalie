@@ -760,11 +760,13 @@ function App(){
           localStorage.setItem('vita_v3_cache', JSON.stringify(data));
         }
         setFbReady(true);
-        // Sincronização em tempo real
+        // onSnapshot: escuta mudanças em tempo real no Firestore.
+        // Qualquer alteração feita em QUALQUER dispositivo chega aqui automaticamente.
         window.__vita.subscribePatients(updated => {
           setPatients(updated);
           localStorage.setItem('vita_v3_cache', JSON.stringify(updated));
         });
+        console.log('✅ Firebase conectado — sincronização em tempo real ativa');
       } catch(e){
         console.warn('Firebase indisponível, usando cache local:', e.message);
         // App continua funcionando com localStorage mesmo sem Firebase
@@ -1541,31 +1543,41 @@ function Admin({patients,setP,onLogout,flash}){
 
   const saveNewPatient=async(data)=>{
     const newP={...data,id:'p'+Date.now()};
-    // Atualiza estado local imediatamente (não espera o Firebase)
+    // Atualiza local imediatamente para a UI não travar
     setP([...patients, newP]);
-    // Persiste no Firebase em background
-    fbSavePatient(newP).catch(console.error);
     setModal(null);
     flash('Paciente criada ✦');
+    // Salva no Firebase — onSnapshot propaga para TODOS os dispositivos automaticamente
+    try {
+      await fbSavePatient(newP);
+    } catch(e) {
+      console.error('Erro ao salvar no Firebase:', e);
+      flash('⚠ Salvo localmente — verifique a conexão');
+    }
   };
 
   const saveEditPatient=async(id,data)=>{
     const updated={...patients.find(p=>p.id===id),...data};
-    // Atualiza estado local imediatamente
     setP(patients.map(p=>p.id===id?updated:p));
-    // Persiste no Firebase em background
-    fbSavePatient(updated).catch(console.error);
     setModal(null);
     flash('Paciente atualizada ✦');
+    try {
+      await fbSavePatient(updated);
+    } catch(e) {
+      console.error('Erro ao atualizar no Firebase:', e);
+      flash('⚠ Salvo localmente — verifique a conexão');
+    }
   };
 
   const delP=async(id)=>{
     if(!confirm('Remover esta paciente permanentemente?'))return;
-    // Remove do estado local imediatamente
     setP(patients.filter(p=>p.id!==id));
-    // Remove do Firebase em background
-    fbDeletePatient(id).catch(console.error);
     flash('Paciente removida');
+    try {
+      await fbDeletePatient(id);
+    } catch(e) {
+      console.error('Erro ao deletar no Firebase:', e);
+    }
   };
 
   const doAdvance=id=>{
