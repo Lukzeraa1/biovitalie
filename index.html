@@ -5,13 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bio Vitalie — Saúde Integrativa</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
-<!-- Firebase SDK -->
-<script type="module" id="firebase-init">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import {
-    getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot
-  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
+<!-- Firebase SDK (compat/UMD — funciona sem módulos ES, compatível com GitHub Pages) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
   const firebaseConfig = {
     apiKey: "AIzaSyB8KlzpO2EGiyKon6gmG7C-KVDbYRg9ua8",
     authDomain: "biovitalie-3d35b.firebaseapp.com",
@@ -21,33 +18,28 @@
     appId: "1:1028355606477:web:8a37955c42171c7d89069d"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-  // ── Exposed to the React app via window.__vita ──
   window.__vita = {
     db,
-    // Load all patients once
     loadPatients: async () => {
-      const snap = await getDocs(collection(db, "patients"));
+      const snap = await db.collection("patients").get();
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
-    // Save (create or update) a single patient
     savePatient: async (patient) => {
-      await setDoc(doc(db, "patients", patient.id), patient);
+      await db.collection("patients").doc(patient.id).set(patient);
     },
-    // Delete a patient
     deletePatient: async (id) => {
-      await deleteDoc(doc(db, "patients", id));
+      await db.collection("patients").doc(id).delete();
     },
-    // Real-time listener — calls cb(patients[]) whenever Firestore changes
     subscribePatients: (cb) => {
-      return onSnapshot(collection(db, "patients"), snap => {
+      return db.collection("patients").onSnapshot(snap => {
         cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       });
     },
   };
-  // Signal React that Firebase is ready
+
   window.__vitaReady = true;
   window.dispatchEvent(new Event("vitaReady"));
 </script>
