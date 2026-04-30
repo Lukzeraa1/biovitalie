@@ -798,7 +798,7 @@ function App(){
     {fbReady ? 'Firebase conectado' : 'Sem conexão Firebase'}
   </div>;
 
-  if(!user) return <>{syncBadge}{React.createElement(Login,{patients,onLogin:handleLogin,flash})}{toast&&<div className="toast">{toast}</div>}</>;
+  if(!user) return <>{syncBadge}{React.createElement(Login,{patients,onLogin:handleLogin,flash,fbReady})}{toast&&<div className="toast">{toast}</div>}</>;
   if(user.type==='admin') return <>{syncBadge}{React.createElement(Admin,{patients,setP,onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
   const pat=patients.find(p=>p.id===user.id);
   if(!pat){ handleLogout(); return null; }
@@ -806,7 +806,7 @@ function App(){
 }
 
 // ── LOGIN ──
-function Login({patients,onLogin,flash}){
+function Login({patients,onLogin,flash,fbReady}){
   const [mode,setMode]=useState(null);
   const [cpf,setCpf]=useState('');
   const [pw,setPw]=useState('');
@@ -819,6 +819,7 @@ function Login({patients,onLogin,flash}){
       if(cpf==='admin'&&pw==='admin123'){ onLogin({type:'admin'},remember); return; }
       setErr('Usuário ou senha incorretos'); return;
     }
+    if(!fbReady){ setErr('⏳ Aguarde, sincronizando dados com o servidor...'); return; }
     const pt=patients.find(p=>p.cpf===cpf);
     if(!pt){ setErr('CPF não encontrado'); return; }
     if(pt.password!==pw){ setErr('Senha incorreta'); return; }
@@ -1585,15 +1586,22 @@ function Admin({patients,setP,onLogout,flash}){
     }
   };
 
-  const doAdvance=id=>{
+  const doAdvance=async(id)=>{
     const p=patients.find(x=>x.id===id);
     if(!p||p.currentPhase>=4){flash('Já está na fase máxima');return;}
     const np=p.currentPhase+1;
     const ul=[...(p.unlockedPhases||[1])];
     if(!ul.includes(np))ul.push(np);
-    updP(id,{currentPhase:np,unlockedPhases:ul});
+    const updated={...p,currentPhase:np,unlockedPhases:ul};
+    setP(patients.map(x=>x.id===id?updated:x));
     flash(`✦ Fase ${np} liberada para ${p.name.split(' ')[0]}!`);
     setAdvConfirm(null);
+    try{
+      await fbSavePatient(updated);
+    }catch(e){
+      console.error('Erro ao salvar fase no Firebase:',e);
+      flash('⚠ Verifique a conexão com o servidor');
+    }
   };
 
   // alerts: patients 3+ days without checkin
