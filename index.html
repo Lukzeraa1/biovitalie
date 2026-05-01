@@ -93,6 +93,12 @@ window.__vita = {
   login: async (email, password) => {
     const res = await fetch(`${API_URL}?action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`);
     return await res.json();
+  },
+
+  // 🔥 ADICIONA ISSO AQUI
+  subscribePatients: (cb) => {
+    window.__vita.loadPatients().then(cb);
+    return () => {};
   }
 
 };
