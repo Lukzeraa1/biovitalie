@@ -5,49 +5,102 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bio Vitalie — Saúde Integrativa</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
-<!-- Firebase SDK (compat/UMD — funciona sem módulos ES, compatível com GitHub Pages) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<!-- Firebase SDK via REST API pura — sem dependência de CDN externo -->
 <script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyB8KlzpO2EGiyKon6gmG7C-KVDbYRg9ua8",
-    authDomain: "biovitalie-3d35b.firebaseapp.com",
-    projectId: "biovitalie-3d35b",
-    storageBucket: "biovitalie-3d35b.appspot.com",
-    messagingSenderId: "1028355606477",
-    appId: "1:1028355606477:web:8a37955c42171c7d89069d"
-  };
+(function() {
+  const PROJECT = "biovitalie-3d35b";
+  const API_KEY = "AIzaSyB8KlzpO2EGiyKon6gmG7C-KVDbYRg9ua8";
+  const BASE    = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
 
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-  const auth = firebase.auth();
-  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  // ── Converte documento Firestore → objeto JS plano ──
+  function fromFirestore(doc) {
+    const out = { id: doc.name.split('/').pop() };
+    for (const [k, v] of Object.entries(doc.fields || {})) {
+      if (v.stringValue  !== undefined) out[k] = v.stringValue;
+      else if (v.integerValue !== undefined) out[k] = Number(v.integerValue);
+      else if (v.booleanValue !== undefined) out[k] = v.booleanValue;
+      else if (v.arrayValue   !== undefined) out[k] = (v.arrayValue.values || []).map(fromValue);
+      else if (v.mapValue     !== undefined) out[k] = fromMap(v.mapValue.fields || {});
+      else out[k] = null;
+    }
+    return out;
+  }
+  function fromValue(v) {
+    if (v.stringValue  !== undefined) return v.stringValue;
+    if (v.integerValue !== undefined) return Number(v.integerValue);
+    if (v.booleanValue !== undefined) return v.booleanValue;
+    if (v.arrayValue   !== undefined) return (v.arrayValue.values || []).map(fromValue);
+    if (v.mapValue     !== undefined) return fromMap(v.mapValue.fields || {});
+    return null;
+  }
+  function fromMap(fields) {
+    const o = {};
+    for (const [k,v] of Object.entries(fields)) o[k] = fromValue(v);
+    return o;
+  }
 
-  window.__vita = {
-    db,
-    auth,
-    loadPatients: async () => {
-      const snap = await db.collection("patients").get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    },
-    savePatient: async (patient) => {
-      // Sincronização centralizada: salva no banco com merge para não perder dados
-      await db.collection("patients").doc(patient.id).set(patient, { merge: true });
-    },
-    deletePatient: async (id) => {
-      await db.collection("patients").doc(id).delete();
-    },
-    subscribePatients: (cb) => {
-      // Escuta em tempo real: qualquer mudança em qualquer aparelho reflete aqui
-      return db.collection("patients").onSnapshot(snap => {
-        cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      });
-    },
-  };
+  // ── Converte objeto JS → campos Firestore ──
+  function toFirestore(obj) {
+    const fields = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === 'id') continue;
+      fields[k] = toValue(v);
+    }
+    return { fields };
+  }
+  function toValue(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number')  return { integerValue: String(Math.round(v)) };
+    if (typeof v === 'string')  return { stringValue: v };
+    if (Array.isArray(v))       return { arrayValue: { values: v.map(toValue) } };
+    if (typeof v === 'object')  return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k,val])=>[k,toValue(val)])) } };
+    return { stringValue: String(v) };
+  }
 
-  window.__vitaReady = true;
-  window.dispatchEvent(new Event("vitaReady"));
+const API_URL = "https://script.google.com/macros/s/AKfycbyFZvlGYa97CqZeo8b2-0BtVG79vrcfvrnOMSCx-7U2j6Mf6O3XJYyWA2QYlpaJ3tO0/exec";
+
+window.__vita = {
+
+  loadPatients: async () => {
+    const res = await fetch(API_URL);
+    const data = await res.json();
+    return data.patients || [];
+  },
+
+  savePatient: async (patient) => {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "save",
+        patient
+      })
+    });
+    return await res.json();
+  },
+
+  deletePatient: async (id) => {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "delete",
+        id
+      })
+    });
+    return await res.json();
+  },
+
+  login: async (email, password) => {
+    const res = await fetch(`${API_URL}?action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`);
+    return await res.json();
+  }
+
+};
+
+window.__vitaReady = true;
+window.dispatchEvent(new Event("vitaReady"));
+console.log("✅ Sheets API conectada");
+})();
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -77,7 +130,7 @@ body{font-family:'Jost',sans-serif;background:var(--bg);color:var(--ink);min-hei
 .a3{animation:fadeUp .5s .16s cubic-bezier(.22,.68,0,1.2) both;}
 .a4{animation:fadeUp .5s .24s cubic-bezier(.22,.68,0,1.2) both;}
 
-/* Estilos mantidos integralmente conforme biovitalie_firebase.html */
+/* LOGIN */
 .lg-bg{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
   background:radial-gradient(ellipse 80% 60% at 20% 100%,rgba(181,103,58,.12) 0%,transparent 60%),
              radial-gradient(ellipse 60% 80% at 80% 0%,rgba(196,150,90,.08) 0%,transparent 60%),var(--bg);}
@@ -684,7 +737,7 @@ const ALL_RECIPES = [
    ingredients:['1 punhado de hortelã fresca','4 cravos-da-índia','500ml de água','Mel a gosto'],
    steps:['Ferva a água com os cravos por 5 min.','Adicione a hortelã, tampe e infusione.','Coe e adoce com mel.','Beba após as refeições.']},
   {phase:3,name:'Água Detox de Pepino e Limão',duration:'5 min',icon:'💧',
-   ingredients:['½ pepino fatiado','1 limão fatiado','Folhas de hortelã','1 liter de água filtrada','Gelo a gosto'],
+   ingredients:['½ pepino fatiado','1 limão fatiado','Folhas de hortelã','1 litro de água filtrada','Gelo a gosto'],
    steps:['Coloque todos os ingredientes na jarra.','Deixe gelar por pelo menos 2 horas.','Beba ao longo do dia.']},
   {phase:3,name:'Salada Detox Arco-Íris',duration:'20 min',icon:'🌈',
    ingredients:['Rúcula e espinafre','1 beterraba crua ralada','Cenoura ralada','½ pimentão amarelo','Sementes de romã','Molho: azeite + limão + mostarda'],
@@ -712,10 +765,35 @@ function getPhaseContent(allItems, currentPhase, countPerPhase) {
   return result;
 }
 
+// ── SEED DATA (gravado no Firestore apenas se o banco estiver vazio) ──
+const SEED_PATIENT = {
+  id:'p1',name:'Ana Beatriz Costa',cpf:'111.111.111-11',email:'ana@email.com',password:'vita@2024',
+  dob:'1985-03-12',hormonalPhase:'Perimenopausa',
+  symptoms:['Ondas de calor','Insônia','Fadiga'],objectives:['Mais energia','Melhor sono'],
+  currentPhase:1,unlockedPhases:[1],
+  canEat:['Frango grelhado','Arroz integral','Brócolis','Ovos','Batata-doce'],
+  cantEat:['Glúten','Laticínios','Açúcar'],
+  supplements:[{name:'Vitamina D3 + K2',dose:'5000 UI/dia'},{name:'Magnésio Quelato',dose:'300mg/noite'},{name:'Ômega-3',dose:'2g/dia'}],
+  exams:[{name:'Perfil Hormonal Feminino',month:'Mês 1',icon:'◈'},{name:'Painel Tireoidiano',month:'Mês 1',icon:'◈'}],
+  reminders:[{id:'r1',title:'Check-in diário',desc:'Registre como você está se sentindo hoje',time:'20:00',done:false}],
+  checkins:[],stats:{exercises:0,meditations:0,recipes:0,checkins:0},
+};
+
+// ── FIREBASE HELPERS ──
+const fbSavePatient   = p  => window.__vita?.savePatient(p);
+const fbDeletePatient = id => window.__vita?.deletePatient(id);
+
 // ── APP ── Firebase-powered
 function App(){
-  const [patients,setPatients]=useState([]);
-  const [loading,setLoading]=useState(true);
+  // Inicia com localStorage como fallback imediato
+  const [patients,setPatients]=useState(()=>{
+    try{
+      const s=localStorage.getItem('vita_v3_cache');
+      if(s) return JSON.parse(s);
+    }catch{}
+    return [SEED_PATIENT];
+  });
+  const [fbReady,setFbReady]=useState(false);
   const [user,setUser]=useState(()=>{
     try{ const s=localStorage.getItem('vita_session'); if(s) return JSON.parse(s); }catch{}
     return null;
@@ -723,53 +801,65 @@ function App(){
   const [toast,setToast]=useState(null);
   const flash=m=>{setToast(m);setTimeout(()=>setToast(null),2600);};
 
+  // ── Bootstrap Firebase em background — app já abre sem esperar ──
   useEffect(()=>{
     const init = async () => {
-      // Inicia a escuta em tempo real. Qualquer dispositivo ligado reflete as mudanças na hora.
-      const unsub = window.__vita.subscribePatients(updated => {
-        setPatients(updated);
-        setLoading(false);
-      });
-      return unsub;
+      try {
+        // Tenta conectar ao Firestore
+        const data = await Promise.race([
+          window.__vita.loadPatients(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+        ]);
+        if(data.length === 0){
+          await window.__vita.savePatient(SEED_PATIENT);
+          setPatients([SEED_PATIENT]);
+          localStorage.setItem('vita_v3_cache', JSON.stringify([SEED_PATIENT]));
+        } else {
+          setPatients(data);
+          localStorage.setItem('vita_v3_cache', JSON.stringify(data));
+        }
+        setFbReady(true);
+        window.__vitaConnected = true;
+        // onSnapshot: escuta mudanças em tempo real no Firestore.
+        window.__vita.subscribePatients(updated => {
+          setPatients(updated);
+          localStorage.setItem('vita_v3_cache', JSON.stringify(updated));
+        });
+        console.log('✅ Firebase conectado — sincronização em tempo real ativa');
+      } catch(e){
+        console.warn('Firebase indisponível, usando cache local:', e.message);
+        // App continua funcionando com localStorage mesmo sem Firebase
+      }
     };
-    
-    let unsubPromise;
-    if(window.__vitaReady){ unsubPromise = init(); }
-    else { window.addEventListener('vitaReady', () => { unsubPromise = init(); }, {once:true}); }
-    
-    return () => { if(unsubPromise && typeof unsubPromise.then === 'function') unsubPromise.then(u => u && u()); };
+    // Dispara imediatamente se Firebase já carregou, senão aguarda
+    if(window.__vitaReady){ init(); }
+    else { window.addEventListener('vitaReady', ()=>init(), {once:true}); }
   },[]);
 
+  // ── setP: só atualiza estado local (Admin já chama fbSavePatient diretamente) ──
+  const setP = (arr) => {
+    setPatients(arr);
+    localStorage.setItem('vita_v3_cache', JSON.stringify(arr));
+  };
   const updP = async (id,d) => {
-    const existing = patients.find(p=>p.id===id);
-    if(existing){
-      const updated = {...existing,...d};
-      try {
-        await window.__vita.savePatient(updated);
-      } catch(e) {
-        flash('Erro ao sincronizar dados');
-        console.error(e);
-      }
-    }
+    const updated = patients.map(p=>p.id===id?{...p,...d}:p);
+    setPatients(updated);
+    localStorage.setItem('vita_v3_cache', JSON.stringify(updated));
+    const changed = updated.find(p=>p.id===id);
+    if(changed) fbSavePatient(changed).catch(console.error);
   };
 
   const handleLogin=(u,remember)=>{ setUser(u); if(remember) localStorage.setItem('vita_session',JSON.stringify(u)); };
   const handleLogout=()=>{ localStorage.removeItem('vita_session'); setUser(null); };
 
-  if(loading) return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)'}}>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:40,marginBottom:16}}>🌿</div>
-        <div style={{fontFamily:'Libre Baskerville,serif',fontSize:18,color:'var(--ink)',marginBottom:8}}>Bio Vitalie</div>
-        <div style={{fontSize:13,color:'var(--muted)'}}>Sincronizando portal...</div>
-      </div>
-    </div>
-  );
+  const syncBadge = <div style={{position:'fixed',bottom:12,right:12,zIndex:9999,display:'flex',alignItems:'center',gap:6,background:'rgba(0,0,0,0.55)',borderRadius:20,padding:'5px 10px',fontSize:11,color:'white',fontFamily:'Jost,sans-serif',backdropFilter:'blur(6px)'}}>
+    <div style={{width:8,height:8,borderRadius:'50%',background:fbReady?'#4ade80':'#f87171',boxShadow:fbReady?'0 0 6px #4ade80':'0 0 6px #f87171'}}/>
+    {fbReady ? 'Firebase conectado' : 'Sem conexão Firebase'}
+  </div>;
 
-  if(!user) return <>{React.createElement(Login,{patients,onLogin:handleLogin,flash})}{toast&&<div className="toast">{toast}</div>}</>;
-  if(user.type==='admin') return <>{React.createElement(Admin,{patients,setP:setPatients,onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
-  
-  const pat = patients.find(p=>p.id===user.id);
+  if(!user) return <>{syncBadge}{React.createElement(Login,{patients,onLogin:handleLogin,flash})}{toast&&<div className="toast">{toast}</div>}</>;
+  if(user.type==='admin') return <>{syncBadge}{React.createElement(Admin,{patients,setP,onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
+  const pat=patients.find(p=>p.id===user.id);
   if(!pat){ handleLogout(); return null; }
   return <>{React.createElement(PatientApp,{patient:pat,upd:d=>updP(pat.id,d),onLogout:handleLogout,flash})}{toast&&<div className="toast">{toast}</div>}</>;
 }
@@ -777,29 +867,29 @@ function App(){
 // ── LOGIN ──
 function Login({patients,onLogin,flash}){
   const [mode,setMode]=useState(null);
-  const [cpf,setCpf]=useState('');
+  const [email,setEmail]=useState('');
   const [pw,setPw]=useState('');
   const [remember,setRemember]=useState(true);
   const [err,setErr]=useState('');
-  const fmt=v=>{const n=v.replace(/\D/g,'').slice(0,11);return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').replace(/(\d{3})(\d{3})(\d{3})/,'$1.$2.$3').replace(/(\d{3})(\d{3})/,'$1.$2').replace(/(\d{3})/,'$1');};
   const go=()=>{
     setErr('');
+    const em=email.trim().toLowerCase();
     if(mode==='admin'){
-      if(cpf==='admin'&&pw==='admin123'){ onLogin({type:'admin'},remember); return; }
-      setErr('Usuário ou senha incorretos'); return;
+      if(em==='admin@biovitalie.com'&&pw==='admin123'){ onLogin({type:'admin'},remember); return; }
+      setErr('E-mail ou senha incorretos'); return;
     }
-    const pt=patients.find(p=>p.cpf===cpf);
-    if(!pt){ setErr('CPF não encontrado'); return; }
+    const pt=patients.find(p=>p.email&&p.email.toLowerCase()===em);
+    if(!pt){ setErr('E-mail não encontrado'); return; }
     if(pt.password!==pw){ setErr('Senha incorreta'); return; }
     onLogin({type:'patient',id:pt.id},remember);
   };
-  const back=()=>{ setMode(null); setCpf(''); setPw(''); setErr(''); };
+  const back=()=>{ setMode(null); setEmail(''); setPw(''); setErr(''); };
 
   if(!mode) return (
     <div className="lg-bg" style={{flexDirection:'column',gap:0}}>
       <div style={{textAlign:'center',marginBottom:40,animation:'fadeUp .5s both'}}>
         <div style={{width:56,height:56,background:'var(--grad)',borderRadius:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,margin:'0 auto 16px',boxShadow:'0 8px 24px rgba(181,103,58,.3)'}}>🌿</div>
-        <div style={{fontFamily:'Libre Baskerville,serif',fontSize:26,color:'var(--ink)'}}>Bio Vitalie</div>
+        <div style={{fontFamily:'Libre Baskerville,serif',fontSize:26,color:'var(--ink)'}}>Vita</div>
         <div style={{fontSize:11,letterSpacing:'.2em',textTransform:'uppercase',color:'var(--muted)',marginTop:4}}>Saúde Integrativa</div>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:14,width:'100%',maxWidth:380,animation:'fadeUp .5s .1s both'}}>
@@ -810,7 +900,7 @@ function Login({patients,onLogin,flash}){
             <div style={{width:46,height:46,background:'linear-gradient(135deg,rgba(181,103,58,.12),rgba(196,150,90,.1))',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>🌸</div>
             <div>
               <div style={{fontFamily:'Libre Baskerville,serif',fontSize:17,fontWeight:400,color:'var(--ink)',marginBottom:3}}>Sou paciente</div>
-              <div style={{fontSize:12,color:'var(--muted)',fontWeight:400}}>Acesse seu programa personalizado</div>
+              <div style={{fontSize:12,color:'var(--muted)',fontWeight:400}}>Acesse seu programa de saúde personalizado</div>
             </div>
             <div style={{marginLeft:'auto',color:'var(--muted)',fontSize:20}}>›</div>
           </div>
@@ -824,22 +914,57 @@ function Login({patients,onLogin,flash}){
     </div>
   );
 
-  return (
+  if(mode==='patient') return (
     <div className="lg-bg">
       <div className="lg-card" style={{animation:'pop .4s both'}}>
         <button onClick={back} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontFamily:'Jost,sans-serif',fontSize:13,marginBottom:28,padding:0,display:'flex',alignItems:'center',gap:6}}>← Voltar</button>
-        <div className="lg-logotype"><div className="lg-emblem">🌸</div><div className="lg-brand">Bio Vitalie<span>Acesse seu programa</span></div></div>
+        <div className="lg-logotype"><div className="lg-emblem">🌸</div><div className="lg-brand">Bem-vinda<span>Acesse seu programa</span></div></div>
         <h1 className="lg-h1">Olá, <em>bom te ver</em></h1>
-        <div className="fl"><label>{mode==='admin'?'Usuário':'CPF'}</label><input className="fi" placeholder={mode==='admin'?'admin':'000.000.000-00'} value={cpf} onChange={e=>setCpf(mode==='admin'?e.target.value:fmt(e.target.value))} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
+        <p className="lg-sub">Entre com seu e-mail e senha para acessar seu programa personalizado</p>
+        <div className="fl"><label>E-mail</label><input className="fi" type="email" placeholder="seu@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
         <div className="fl"><label>Senha</label><input className="fi" type="password" placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div>
         <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,cursor:'pointer'}}>
           <div onClick={()=>setRemember(!remember)} style={{width:22,height:22,borderRadius:6,flexShrink:0,border:`2px solid ${remember?'var(--terra)':'var(--border)'}`,background:remember?'var(--terra)':'white',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',cursor:'pointer'}}>
             {remember&&<span style={{color:'white',fontSize:13,fontWeight:700}}>✓</span>}
           </div>
-          <span style={{fontSize:13,color:'var(--ink2)',userSelect:'none'}}>Manter sessão aberta</span>
+          <span style={{fontSize:13,color:'var(--ink2)',userSelect:'none'}}>Manter sessão aberta — não pedir login toda vez</span>
         </label>
         {err&&<div style={{background:'rgba(196,120,120,.1)',border:'1px solid rgba(196,120,120,.25)',borderRadius:10,padding:'10px 14px',fontSize:13,color:'var(--rose)',marginBottom:14}}>⚠ {err}</div>}
         <button className="btn-t" onClick={go}>Entrar no programa</button>
+        <div className="lg-dm" style={{marginTop:16}}>Demo · e-mail: ana@email.com · senha: vita@2024</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:24,background:'var(--ink)'}}>
+      <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:28,padding:'48px 44px',width:'100%',maxWidth:400,animation:'pop .4s both'}}>
+        <button onClick={back} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,.4)',fontFamily:'Jost,sans-serif',fontSize:13,marginBottom:28,padding:0,display:'flex',alignItems:'center',gap:6}}>← Voltar</button>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:36}}>
+          <div style={{width:44,height:44,background:'rgba(255,255,255,.08)',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Georgia,serif',fontSize:20,color:'rgba(255,255,255,.6)'}}>◈</div>
+          <div><div style={{fontFamily:'Libre Baskerville,serif',fontSize:20,color:'white',fontWeight:400}}>Vita</div><div style={{fontSize:10,letterSpacing:'.18em',textTransform:'uppercase',color:'rgba(255,255,255,.35)',marginTop:2}}>Painel Administrativo</div></div>
+        </div>
+        <h1 style={{fontFamily:'Libre Baskerville,serif',fontSize:24,fontWeight:400,color:'white',marginBottom:6}}>Acesso <em style={{fontStyle:'italic',color:'var(--gold)'}}>restrito</em></h1>
+        <p style={{fontSize:13,color:'rgba(255,255,255,.4)',marginBottom:28}}>Somente para profissionais autorizados</p>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:10,fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'rgba(255,255,255,.35)',marginBottom:8}}>E-mail</label>
+          <input style={{width:'100%',padding:'14px 18px',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:12,background:'rgba(255,255,255,.06)',fontFamily:'Jost,sans-serif',fontSize:14,color:'white',outline:'none'}} type="email" placeholder="admin@biovitalie.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus onFocus={e=>e.target.style.borderColor='rgba(196,150,90,.6)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,.1)'}/>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:10,fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'rgba(255,255,255,.35)',marginBottom:8}}>Senha</label>
+          <input style={{width:'100%',padding:'14px 18px',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:12,background:'rgba(255,255,255,.06)',fontFamily:'Jost,sans-serif',fontSize:14,color:'white',outline:'none'}} type="password" placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} onFocus={e=>e.target.style.borderColor='rgba(196,150,90,.6)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,.1)'}/>
+        </div>
+        {err&&<div style={{background:'rgba(196,120,120,.12)',border:'1px solid rgba(196,120,120,.25)',borderRadius:10,padding:'10px 14px',fontSize:13,color:'#e8a0a0',marginBottom:16}}>⚠ {err}</div>}
+        <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:20,cursor:'pointer'}}>
+          <div onClick={()=>setRemember(!remember)} style={{width:20,height:20,borderRadius:5,flexShrink:0,border:`2px solid ${remember?'var(--gold)':'rgba(255,255,255,.2)'}`,background:remember?'var(--gold)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',cursor:'pointer'}}>
+            {remember&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+          </div>
+          <span style={{fontSize:12,color:'rgba(255,255,255,.45)',userSelect:'none'}}>Manter sessão aberta</span>
+        </label>
+        <button onClick={go} style={{width:'100%',padding:15,background:'linear-gradient(135deg,var(--terra),var(--gold))',border:'none',borderRadius:12,fontFamily:'Jost,sans-serif',fontSize:14,fontWeight:600,letterSpacing:'.06em',color:'white',cursor:'pointer',boxShadow:'0 6px 24px rgba(181,103,58,.4)',transition:'all .15s'}}
+          onMouseOver={e=>{e.currentTarget.style.transform='translateY(-2px)';}}
+          onMouseOut={e=>{e.currentTarget.style.transform='';}}>Entrar no painel</button>
+        <div style={{textAlign:'center',marginTop:20,fontSize:11,color:'rgba(255,255,255,.2)'}}>Demo · e-mail: admin@biovitalie.com · senha: admin123</div>
       </div>
     </div>
   );
@@ -888,77 +1013,219 @@ function HomeTab({patient,upd,onCheckin,flash}){
   const phasePct=Math.min(Math.round((phaseCI/phase.days)*100),100);
   const daysLeft=Math.max(0,phase.days-phaseCI);
 
+  // Phase-filtered content
+  // exercises: 3 per phase
   const exercises=getPhaseContent(ALL_EXERCISES, patient.currentPhase, [3,3,3,3]);
+  // meditations: 3 for phase1, +2 each new phase
   const meditations=getPhaseContent(ALL_MEDITATIONS, patient.currentPhase, [3,2,2,2]);
+  // recipes: 3 per phase
   const recipes=getPhaseContent(ALL_RECIPES, patient.currentPhase, [3,3,3,3]);
 
+  const weekMsg=()=>{
+    if(wkCnt===0) return 'Comece hoje — cada check-in é um passo na sua jornada ✦';
+    if(wkCnt===7) return 'Semana perfeita! Você completou todos os 7 dias 🎉';
+    if(wkCnt>=5) return `Incrível disciplina! Você fez ${wkCnt}/7 check-ins essa semana ✦`;
+    if(wkCnt>=3) return `Parabéns pela disciplina! Você fez ${wkCnt}/7 check-ins essa semana ✦`;
+    return `Você fez ${wkCnt}/7 check-ins essa semana — continue firme!`;
+  };
+
+  const todayCI=(patient.checkins||[]).find(c=>c.date===todayStr);
+  const [doneExs,setDoneExs]=useState([]);
+  const [doneMeds,setDoneMeds]=useState([]);
+  const [selectedRecipe,setSelectedRecipe]=useState(null);
+  const [confirmAct,setConfirmAct]=useState(null);
+
+  // ── WATER TRACKER ──
+  const waterKey=`vita_water_${patient.id}_${todayStr}`;
   const [waterCups,setWaterCups]=useState(()=>{
-    const k=`vita_water_${patient.id}_${todayStr}`;
-    return Number(localStorage.getItem(k)||0);
+    try{return JSON.parse(localStorage.getItem(waterKey)||'0');}catch{return 0;}
   });
+  const MAX_WATER=12;
   const addWater=()=>{
-    if(waterCups>=12)return;
+    if(waterCups>=MAX_WATER)return;
     const n=waterCups+1;
     setWaterCups(n);
-    localStorage.setItem(`vita_water_${patient.id}_${todayStr}`, n);
-    flash(`💧 +1 copo · ${n}/12 hoje`);
+    localStorage.setItem(waterKey,JSON.stringify(n));
+    if(n===8)flash('🎉 Meta diária atingida! 8 copos de água!');
+    else flash(`💧 +1 copo · ${n} de ${MAX_WATER} hoje`);
   };
   const removeWater=()=>{
     if(waterCups<=0)return;
     const n=waterCups-1;
     setWaterCups(n);
-    localStorage.setItem(`vita_water_${patient.id}_${todayStr}`, n);
+    localStorage.setItem(waterKey,JSON.stringify(n));
+  };
+  const waterMsg=()=>{
+    if(waterCups===0)return 'Beba seu primeiro copo agora 💧';
+    if(waterCups<4)return `Continue! Faltam ${8-waterCups} copos para a meta`;
+    if(waterCups<8)return `Boa! Faltam ${8-waterCups} copos para a meta de 8`;
+    if(waterCups===8)return '🎉 Meta diária atingida!';
+    return `Excelente! ${waterCups} copos hoje ✦`;
   };
 
-  const [doneExs,setDoneExs]=useState([]);
-  const [doneMeds,setDoneMeds]=useState([]);
-  const [selectedRecipe,setSelectedRecipe]=useState(null);
+  // ── SYMPTOM POPUP ──
+  const symKey=`vita_syms_${patient.id}_${todayStr}`;
+  const [todaySyms,setTodaySyms]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem(symKey)||'[]');}catch{return [];}
+  });
+  const [showSymPopup,setShowSymPopup]=useState(false);
+  const [popupSelected,setPopupSelected]=useState([]);
+  // Show popup after 15s if not already seen today
+  const seenKey=`vita_sympopup_${patient.id}_${todayStr}`;
+  React.useEffect(()=>{
+    if(localStorage.getItem(seenKey))return;
+    const t=setTimeout(()=>setShowSymPopup(true),15000);
+    return ()=>clearTimeout(t);
+  },[]);
+
+  const openSymPopup=()=>{setPopupSelected([...todaySyms]);setShowSymPopup(true);};
+  const togPopupSym=s=>setPopupSelected(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+  const saveSyms=()=>{
+    setTodaySyms(popupSelected);
+    localStorage.setItem(symKey,JSON.stringify(popupSelected));
+    localStorage.setItem(seenKey,'1');
+    setShowSymPopup(false);
+    flash(popupSelected.length>0?`${popupSelected.length} sintoma${popupSelected.length>1?'s':''} registrado${popupSelected.length>1?'s':''}  ✦`:'Sem sintomas registrados ✦');
+  };
+  const removeActiveSym=s=>{
+    const n=todaySyms.filter(x=>x!==s);
+    setTodaySyms(n);
+    localStorage.setItem(symKey,JSON.stringify(n));
+  };
+
+  const handleExClick=i=>{
+    if(doneExs.includes(i)){setDoneExs(p=>p.filter(x=>x!==i));return;}
+    setConfirmAct({type:'ex',index:i,name:exercises[i].name,duration:exercises[i].duration,icon:exercises[i].icon});
+  };
+  const handleMedClick=i=>{
+    if(doneMeds.includes(i)){setDoneMeds(p=>p.filter(x=>x!==i));return;}
+    setConfirmAct({type:'med',index:i,name:meditations[i].name,duration:meditations[i].duration});
+  };
+  const confirmDo=()=>{
+    if(!confirmAct)return;
+    if(confirmAct.type==='ex'){
+      setDoneExs(p=>[...p,confirmAct.index]);
+      flash('Exercício marcado! 💪');
+      upd({stats:{...(patient.stats||{}),exercises:(patient.stats?.exercises||0)+1}});
+    } else {
+      setDoneMeds(p=>[...p,confirmAct.index]);
+      flash('Meditação marcada! 🌿');
+      upd({stats:{...(patient.stats||{}),meditations:(patient.stats?.meditations||0)+1}});
+    }
+    setConfirmAct(null);
+  };
 
   return (
     <div>
+      {/* HEADER */}
       <div className="home-hero a1">
         <div className="hero-top">
-          <div><div className="hero-gr">{greet}</div><div className="hero-nm">{patient.name.split(' ')[0]}<em>!</em></div></div>
+          <div>
+            <div className="hero-gr">{greet}</div>
+            <div className="hero-nm">{patient.name.split(' ')[0]}<em>!</em></div>
+          </div>
           <div className="hero-av">{patient.name[0]}</div>
         </div>
         <div className="cta-ci a2" onClick={onCheckin}>
-          <div className="cta-ci-ic">✦</div>
-          <div className="cta-ci-txt"><div className="cta-ci-title">Check-in do dia</div><div className="cta-ci-sub">Registre como você está se sentindo</div></div>
+          <div className="cta-ci-ic" style={{fontFamily:'Georgia,serif',color:'rgba(255,255,255,.9)'}}>✦</div>
+          <div className="cta-ci-txt">
+            <div className="cta-ci-title">Check-in do dia</div>
+            <div className="cta-ci-sub">Registre como você está se sentindo</div>
+          </div>
           <span className="cta-ci-arr">›</span>
         </div>
       </div>
 
+      {/* WATER TRACKER */}
       <div className="water-bar a2">
         <div className="water-bar-top">
           <div className="water-bar-title">Água de <em>hoje</em></div>
-          <div className="water-count-wrap"><span className="water-count">{waterCups}</span><span className="water-count-of">/12 copos</span></div>
+          <div className="water-count-wrap">
+            <span className="water-count">{waterCups}</span>
+            <span className="water-count-of">/{MAX_WATER} copos</span>
+          </div>
         </div>
         <div className="water-cups">
-          {Array.from({length:12}).map((_,i)=><div key={i} className={`water-cup${i<waterCups?' filled':''}`} onClick={i<waterCups?removeWater:addWater}>💧</div>)}
+          {Array.from({length:MAX_WATER},(_,i)=>(
+            <div key={i} className={`water-cup${i<waterCups?' filled':''}`}
+              onClick={i<waterCups?removeWater:addWater}
+              title={i<waterCups?'Clique para remover':'Clique para adicionar'}>
+              💧
+            </div>
+          ))}
         </div>
-        <button className="water-cta" onClick={addWater}>+ Bebi um copo agora</button>
+        <button className="water-cta" onClick={addWater} disabled={waterCups>=MAX_WATER}
+          style={{opacity:waterCups>=MAX_WATER?.6:1}}>
+          <span style={{fontSize:20}}>+</span> Bebi um copo agora
+        </button>
+        <div className="water-msg">{waterMsg()}</div>
       </div>
 
+      {/* SYMPTOM STRIP */}
+      {todaySyms.length>0&&(
+        <div style={{padding:'0 24px',marginBottom:16}} className="a2">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:12,fontWeight:600,letterSpacing:'.08em',textTransform:'uppercase',color:'var(--muted)'}}>Sintomas de hoje</span>
+            <button onClick={openSymPopup} style={{background:'none',border:'none',cursor:'pointer',fontSize:12,fontWeight:600,color:'var(--terra)',fontFamily:'Jost,sans-serif'}}>Editar ›</button>
+          </div>
+          <div className="sym-active-strip">
+            {todaySyms.map(s=>(
+              <div key={s} className="sym-active-chip" onClick={()=>removeActiveSym(s)}>
+                {s}<span className="x-ic">×</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {todaySyms.length===0&&(
+        <div style={{padding:'0 24px',marginBottom:16}} className="a2">
+          <button onClick={openSymPopup} style={{
+            background:'none',border:'1.5px dashed var(--border)',borderRadius:12,
+            padding:'10px 16px',width:'100%',cursor:'pointer',
+            fontFamily:'Jost,sans-serif',fontSize:13,color:'var(--muted)',
+            display:'flex',alignItems:'center',gap:8,transition:'all .2s'
+          }}>
+            <span>◇</span> Registrar sintomas de hoje
+          </button>
+        </div>
+      )}
       <div className="sec-pad a2"><div className="sec-hd"><span className="sec-title">Sua Jornada</span></div></div>
       <div className="j-rail a2">
-        {PHASES.map(ph=>(
-          <div key={ph.id} className={`ph-tile${ph.id===patient.currentPhase?' active':ph.id<patient.currentPhase?' done':' locked'}`}>
-            <div className="ph-orb">{ph.icon}</div>
-            <div className="ph-nm">{ph.name}</div>
-            <div className="ph-mo">{ph.months}</div>
-          </div>
-        ))}
+        {PHASES.map(ph=>{
+          const isAct=ph.id===patient.currentPhase;
+          const isDone=ph.id<patient.currentPhase;
+          return (
+            <div key={ph.id} className={`ph-tile${isAct?' active':isDone?' done':' locked'}`}>
+              {isAct&&<span className="ph-badge">Você está aqui</span>}
+              {isDone&&<span className="ph-badge done-b">✓ Concluída</span>}
+              <div className="ph-orb" style={{fontFamily:'Georgia,serif',fontSize:20}}>{ph.icon}</div>
+              <div className="ph-nm">{ph.name}</div>
+              <div className="ph-mo">{ph.months}</div>
+            </div>
+          );
+        })}
       </div>
 
+      {/* Progress */}
       <div className="j-progress-card a2" style={{marginTop:14}}>
-        <div className="j-prog-top"><span className="j-prog-where">Fase atual</span><span style={{fontSize:12,fontWeight:600,color:'var(--terra)'}}>{phasePct}%</span></div>
+        <div className="j-prog-top">
+          <span className="j-prog-where">Fase atual</span>
+          <span style={{fontSize:12,fontWeight:600,color:'var(--terra)'}}>{phasePct}%</span>
+        </div>
         <div className="j-prog-phase"><em>{phase.name}</em> — {phase.months}</div>
         <div className="j-prog-next">
-          {daysLeft>0 ? <>Faltam <strong>{daysLeft} dias de check-in</strong> para avançar</> : <>Pronta para avançar para a próxima fase! ✦</>}
+          {daysLeft>0
+            ? <>Faltam <strong>{daysLeft} dias de check-in</strong> para avançar{nextPhase?` para ${nextPhase.name}`:''}</>
+            : <>Pronta para avançar para a próxima fase! ✦</>}
         </div>
-        <div className="prog-wrap" style={{marginTop:12}}><div className="prog-fill" style={{width:`${phasePct}%`}}/></div>
+        <div className="j-prog-bar-wrap"><div className="j-prog-bar" style={{width:`${phasePct}%`}}/></div>
+        <div className="j-prog-labels">
+          <span className="j-prog-days-done">{phaseCI} dias concluídos</span>
+          <span>{phase.days} dias totais</span>
+        </div>
       </div>
 
+      {/* ESTA SEMANA */}
       <div className="sec-pad a3"><div className="sec-hd" style={{marginTop:20}}><span className="sec-title">Esta Semana</span></div></div>
       <div className="week-card a3">
         <div className="week-row">
@@ -968,71 +1235,193 @@ function HomeTab({patient,upd,onCheckin,flash}){
             const isDn=doneSet.has(ds);
             return (
               <div key={i} className={`day-pip${isT?' today':''}${isDn&&!isT?' chkd':''}`}>
-                <span style={{fontSize:9,fontWeight:600}}>{WDAYS[i]}</span>
+                <span style={{fontSize:9,fontWeight:600,letterSpacing:'.06em'}}>{WDAYS[i]}</span>
                 <span>{d.getDate()}</span>
               </div>
             );
           })}
         </div>
         <div className="week-ft" style={{marginTop:12}}>
-          <span className="week-cnt">{wkCnt}<span style={{fontSize:13,color:'var(--muted)',fontWeight:400}}>/7</span></span>
+          <span className="week-cnt">{wkCnt}<span style={{fontSize:13,color:'var(--muted)',fontFamily:'Jost',fontWeight:400}}>/7</span></span>
           <span style={{fontSize:12,color:'var(--muted)'}}>check-ins</span>
         </div>
+        <div className="week-msg">{weekMsg()}</div>
       </div>
 
+      {/* EXERCÍCIOS */}
       <div className="act-card a3" style={{marginTop:20}}>
-        <div className="act-card-head"><div className="act-card-icon ex">🏃‍♀️</div><div className="act-card-q">Hoje vamos <em>praticar</em> qual exercício?</div></div>
+        <div className="act-card-head">
+          <div className="act-card-icon ex">🏃‍♀️</div>
+          <div className="act-card-q">Hoje vamos <em>praticar</em> qual exercício?</div>
+        </div>
         <div className="act-card-items">
           {exercises.map((ex,i)=>(
-            <div key={i} className={`act-item${doneExs.includes(i)?' done-item':''}`} onClick={()=>setDoneExs(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])}>
+            <div key={i} className={`act-item${doneExs.includes(i)?' done-item':''}`} onClick={()=>handleExClick(i)}>
               <div className="act-item-ic">{ex.icon}</div>
-              <div className="act-item-info"><div className="act-item-name">{ex.name}</div><div className="act-item-dur">◷ {ex.duration}</div></div>
+              <div className="act-item-info">
+                <div className="act-item-name">{ex.name}</div>
+                <div className="act-item-dur">◷ {ex.duration}{doneExs.includes(i)?' · toque para desmarcar':''}</div>
+              </div>
               <div className="act-item-check">{doneExs.includes(i)?'✓':''}</div>
             </div>
           ))}
         </div>
       </div>
 
+      {/* MEDITAÇÕES */}
       <div className="act-card a3">
-        <div className="act-card-head"><div className="act-card-icon med" style={{fontSize:16}}>◇</div><div className="act-card-q">Já fez a sua <em>meditação</em>?</div></div>
+        <div className="act-card-head">
+          <div className="act-card-icon med" style={{fontFamily:'Georgia,serif',fontSize:16,color:'var(--sage)',display:'flex',alignItems:'center',justifyContent:'center'}}>◇</div>
+          <div className="act-card-q">Já fez a sua <em>meditação</em>?</div>
+        </div>
         <div className="act-card-items">
           {meditations.map((m,i)=>(
-            <div key={i} className={`act-item${doneMeds.includes(i)?' done-item':''}`} onClick={()=>setDoneMeds(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])}>
-              <div className="act-item-ic">◇</div>
-              <div className="act-item-info"><div className="act-item-name">{m.name}</div><div className="act-item-dur">◷ {m.duration}</div></div>
+            <div key={i} className={`act-item${doneMeds.includes(i)?' done-item':''}`} onClick={()=>handleMedClick(i)}>
+              <div className="act-item-ic" style={{fontFamily:'Georgia,serif',fontSize:16,color:'var(--sage)',background:'rgba(107,140,110,.1)',width:36,height:36,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center'}}>◇</div>
+              <div className="act-item-info">
+                <div className="act-item-name">{m.name}</div>
+                <div className="act-item-dur">◷ {m.duration}{doneMeds.includes(i)?' · toque para desmarcar':''}</div>
+              </div>
               <div className="act-item-check">{doneMeds.includes(i)?'✓':''}</div>
             </div>
           ))}
         </div>
       </div>
 
+      {/* ALIMENTAÇÃO */}
       <div className="act-card a4">
-        <div className="act-card-head"><div className="act-card-icon food">🥗</div><div className="act-card-q">Sua <em>alimentação</em> de hoje</div></div>
+        <div className="act-card-head">
+          <div className="act-card-icon food">🥗</div>
+          <div className="act-card-q">Sua <em>alimentação</em> de hoje</div>
+        </div>
         <div className="act-card-items">
           {recipes.map((r,i)=>(
             <div key={i} className="act-item" onClick={()=>setSelectedRecipe(r)}>
               <div className="act-item-ic">{r.icon}</div>
-              <div className="act-item-info"><div className="act-item-name">{r.name}</div><div className="act-item-dur">◷ {r.duration} preparo</div></div>
+              <div className="act-item-info">
+                <div className="act-item-name">{r.name}</div>
+                <div className="act-item-dur">◷ {r.duration} preparo · toque para ver a receita</div>
+              </div>
               <span style={{color:'var(--muted)',fontSize:16}}>›</span>
             </div>
           ))}
         </div>
       </div>
 
+      {/* EXAMES */}
+      {(patient.exams||[]).length>0&&(
+        <div className="act-card a4">
+          <div className="act-card-head">
+            <div className="act-card-icon exam" style={{fontFamily:'Georgia,serif',fontSize:15,color:'#7a9dc4',display:'flex',alignItems:'center',justifyContent:'center'}}>◈</div>
+            <div className="act-card-q">Exames a fazer <em>nesta etapa</em></div>
+          </div>
+          <div style={{padding:'0 12px 14px',display:'flex',flexDirection:'column',gap:8}}>
+            {(patient.exams||[]).map((ex,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 14px',background:'var(--bg)',borderRadius:12}}>
+                <div style={{width:34,height:34,borderRadius:10,background:'rgba(100,140,200,.1)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Georgia,serif',fontSize:13,color:'#7a9dc4',flexShrink:0}}>◈</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:500,color:'var(--ink)'}}>{ex.name}</div>
+                  <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{ex.month}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{height:16}}/>
+
+      {/* SYMPTOM POPUP */}
+      {showSymPopup&&(
+        <div className="sym-popup-overlay" onClick={e=>{if(e.target.className==='sym-popup-overlay')saveSyms();}}>
+          <div className="sym-popup">
+            <div className="sym-popup-handle"/>
+            <div className="sym-popup-title">Como estão os <em>sintomas</em> hoje?</div>
+            <div className="sym-popup-sub">
+              Selecione o que está sentindo agora. Você pode atualizar isso ao longo do dia — os registros ficam salvos até meia-noite.
+            </div>
+            {popupSelected.length>0&&(
+              <div className="sym-active-strip">
+                {popupSelected.map(s=>(
+                  <div key={s} className="sym-active-chip" onClick={()=>togPopupSym(s)}>
+                    {s}<span className="x-ic">×</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="sym-popup-grid">
+              {SYMPTOMS.map(s=>(
+                <button key={s} className={`sym-ptag${popupSelected.includes(s)?' on':''}`} onClick={()=>togPopupSym(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button className="btn-reg" onClick={saveSyms}>
+              {popupSelected.length>0
+                ?`Salvar ${popupSelected.length} sintoma${popupSelected.length>1?'s':''} ✦`
+                :'Estou bem, sem sintomas ✦'}
+            </button>
+            <button className="btn-cancel" onClick={()=>{localStorage.setItem(seenKey,'1');setShowSymPopup(false);}}>
+              Agora não
+            </button>
+          </div>
+        </div>
+      )}
+      {confirmAct&&(
+        <div className="overlay" onClick={e=>e.target.className==='overlay'&&setConfirmAct(null)}>
+          <div className="sheet" style={{maxHeight:'auto',padding:'24px 24px 32px'}}>
+            <div className="sh-handle"/>
+            <div style={{textAlign:'center',marginBottom:20}}>
+              <div style={{fontSize:36,marginBottom:10}}>{confirmAct.icon||'◇'}</div>
+              <div style={{fontFamily:'Libre Baskerville,serif',fontSize:18,fontWeight:400,marginBottom:6}}>
+                {confirmAct.type==='ex'?'Confirmar exercício':'Confirmar meditação'}
+              </div>
+              <div style={{fontSize:14,color:'var(--ink2)',fontWeight:500,marginBottom:4}}>{confirmAct.name}</div>
+              <div style={{fontSize:12,color:'var(--muted)'}}>◷ {confirmAct.duration}</div>
+            </div>
+            <div style={{background:'var(--bg2)',borderRadius:14,padding:'14px 16px',fontSize:13,color:'var(--ink3)',textAlign:'center',marginBottom:20,lineHeight:1.6}}>
+              {confirmAct.type==='ex'
+                ?'Você realizou este exercício hoje?'
+                :'Você realizou esta meditação hoje?'}
+            </div>
+            <button className="btn-reg" onClick={confirmDo}>
+              ✓ Sim, {confirmAct.type==='ex'?'fiz o exercício':'fiz a meditação'}
+            </button>
+            <button className="btn-cancel" onClick={()=>setConfirmAct(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* RECIPE MODAL */}
       {selectedRecipe&&(
         <div className="overlay" onClick={e=>e.target.className==='overlay'&&setSelectedRecipe(null)}>
           <div className="recipe-sheet">
             <div className="sh-handle"/>
             <div className="recipe-img">{selectedRecipe.icon}</div>
             <div className="recipe-title"><em>{selectedRecipe.name}</em></div>
+            <div className="recipe-meta">
+              <span className="recipe-tag">◷ {selectedRecipe.duration} preparo</span>
+              <span className="recipe-tag">🌿 {PHASES.find(p=>p.id===selectedRecipe.phase)?.name}</span>
+            </div>
             <div className="recipe-section">Ingredientes</div>
             <div className="recipe-ing">
-              {(selectedRecipe.ingredients||[]).map((ing,i)=>(<div key={i} className="recipe-ing-item">✦ {ing}</div>))}
+              {(selectedRecipe.ingredients||[]).map((ing,i)=>(
+                <div key={i} className="recipe-ing-item">
+                  <span style={{color:'var(--terra)',fontFamily:'Georgia,serif'}}>✦</span>
+                  <span>{ing}</span>
+                </div>
+              ))}
             </div>
             <div className="recipe-section">Modo de Preparo</div>
             <div className="recipe-steps">
-              {(selectedRecipe.steps||[]).map((step,i)=>(<div key={i} className="recipe-step"><div className="recipe-step-num">{i+1}</div><div className="recipe-step-txt">{step}</div></div>))}
+              {(selectedRecipe.steps||[]).map((step,i)=>(
+                <div key={i} className="recipe-step">
+                  <div className="recipe-step-num">{i+1}</div>
+                  <div className="recipe-step-txt">{step}</div>
+                </div>
+              ))}
             </div>
+            <button className="btn-cancel" style={{marginTop:24}} onClick={()=>setSelectedRecipe(null)}>Fechar receita</button>
           </div>
         </div>
       )}
@@ -1042,58 +1431,168 @@ function HomeTab({patient,upd,onCheckin,flash}){
 
 function CheckinModal({patient,upd,onClose,flash}){
   const [mood,setMood]=useState('');
-  const [energy,setEnergy]=useState(3);
-  const [sleep,setSleep]=useState(3);
+  const [energy,setEnergy]=useState(0);
+  const [sleep,setSleep]=useState(0);
+  const [water,setWater]=useState(6);
+  const [syms,setSyms]=useState([]);
+  const [exD,setExD]=useState(false);
+  const [medD,setMedD]=useState(false);
   const [notes,setNotes]=useState('');
+  const togSym=s=>setSyms(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const submit=async()=>{
     const today=new Date().toISOString().split('T')[0];
-    const ci={date:today,mood,energy,sleep,notes};
+    const ci={date:today,mood,energy,sleep,water,symptoms:syms,exerciseDone:exD,meditationDone:medD,notes};
     const checkins=[...(patient.checkins||[]),ci];
-    await upd({checkins});
+    const stats={...(patient.stats||{}),checkins:(patient.stats?.checkins||0)+1,exercises:(patient.stats?.exercises||0)+(exD?1:0),meditations:(patient.stats?.meditations||0)+(medD?1:0)};
+    const ph=PHASES.find(p=>p.id===patient.currentPhase)||PHASES[0];
+    let cp=patient.currentPhase;
+    let ul=[...(patient.unlockedPhases||[1])];
+    if(checkins.length>=ph.days&&cp<4){cp++;if(!ul.includes(cp))ul.push(cp);flash(`✦ Fase ${cp} desbloqueada!`);}
+    await upd({checkins,stats,currentPhase:cp,unlockedPhases:ul});
     flash('Dia registrado com sucesso ✦');
     onClose();
   };
   return (
     <div className="overlay" onClick={e=>e.target.className==='overlay'&&onClose()}>
       <div className="sheet">
-        <div className="sh-handle"/><div className="sh-title">Check-in do Dia</div>
+        <div className="sh-handle"/>
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:20}}>
+          <div style={{width:44,height:44,background:'rgba(181,103,58,.1)',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--terra)',fontFamily:'Georgia,serif',fontSize:20}}>✦</div>
+          <div><div className="sh-title" style={{marginBottom:2}}>Check-in do Dia</div><div className="sh-sub" style={{marginBottom:0}}>Como você está se sentindo hoje?</div></div>
+        </div>
         <span className="f-lbl">Humor</span>
         <div className="mood-strip">
-          {MOODS.map(m=>(<button key={m.l} className={`mood-btn${mood===m.l?' sel':''}`} onClick={()=>setMood(m.l)}><span className="mood-em">{m.e}</span><span className="mood-lb">{m.l}</span></button>))}
+          {MOODS.map(m=>(
+            <button key={m.l} className={`mood-btn${mood===m.l?' sel':''}`} onClick={()=>setMood(m.l)}>
+              <span className="mood-em">{m.e}</span>
+              <span className="mood-lb">{m.l}</span>
+            </button>
+          ))}
         </div>
         <div className="scale-grid">
-          <div><div className="scale-ttl">☀ Energia</div><div className="sq-row">{[1,2,3,4,5].map(n=><div key={n} className={`sq e${n<=energy?' on':''}`} onClick={()=>setEnergy(n)}/>)}</div></div>
-          <div><div className="scale-ttl">◑ Sono</div><div className="sq-row">{[1,2,3,4,5].map(n=><div key={n} className={`sq s${n<=sleep?' on':''}`} onClick={()=>setSleep(n)}/>)}</div></div>
+          <div>
+            <div className="scale-ttl">☀ Energia</div>
+            <div className="sq-row">{[1,2,3,4,5].map(n=><div key={n} className={`sq e${n<=energy?' on':''}`} onClick={()=>setEnergy(n)}/>)}</div>
+          </div>
+          <div>
+            <div className="scale-ttl">◑ Sono</div>
+            <div className="sq-row">{[1,2,3,4,5].map(n=><div key={n} className={`sq s${n<=sleep?' on':''}`} onClick={()=>setSleep(n)}/>)}</div>
+          </div>
         </div>
-        <button className="btn-reg" onClick={submit}>Salvar Check-in</button>
+        <div className="sl-block">
+          <div className="sl-lbl">◈ Água (copos) <span className="sl-val">{water} copos</span></div>
+          <input type="range" min={0} max={12} value={water} onChange={e=>setWater(+e.target.value)}/>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--muted)',marginTop:4}}><span>0</span><span>12</span></div>
+        </div>
+        <span className="f-lbl">Sintomas de hoje</span>
+        <div className="tag-cloud">
+          {SYMPTOMS.map(s=><button key={s} className={`sym-tag${syms.includes(s)?' on':''}`} onClick={()=>togSym(s)}>{s}</button>)}
+        </div>
+        <div className="tog-row">
+          <button className={`tog-btn${exD?' on':''}`} onClick={()=>setExD(!exD)}>◷ Exercício feito</button>
+          <button className={`tog-btn${medD?' on':''}`} onClick={()=>setMedD(!medD)}>◇ Meditação feita</button>
+        </div>
+        <span className="f-lbl" style={{marginBottom:8}}>Anotações</span>
+        <textarea className="fi" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Como foi seu dia? Alguma observação especial..."/>
+        <button className="btn-reg" onClick={submit}>Registrar dia</button>
+        <button className="btn-cancel" onClick={onClose}>Cancelar</button>
       </div>
     </div>
   );
 }
 
 function PlanoTab({patient,upd,flash}){
+  const togR=id=>upd({reminders:(patient.reminders||[]).map(r=>r.id===id?{...r,done:!r.done}:r)});
+  const delR=id=>{upd({reminders:(patient.reminders||[]).filter(r=>r.id!==id)});flash('Lembrete removido');};
   return (
-    <div className="a1">
-      <div className="plano-hero"><h1 className="plano-t">Plano de <em>Bem-Estar</em></h1><p className="plano-s">Suas recomendações personalizadas</p></div>
-      <div className="sec-pad"><div className="sec-hd"><span className="sec-title">Suplementação</span></div></div>
-      {(patient.supplements||[]).map((s,i)=>(<div key={i} className="suppl-row">◈ <span className="suppl-nm">{s.name}</span><span className="suppl-ds">{s.dose}</span></div>))}
-      <div className="sec-pad"><div className="sec-hd"><span className="sec-title">Alimentação</span></div></div>
-      <div className="food-panel a4"><div className="food-ph can">✓ Pode comer</div><div className="food-pb">{(patient.canEat||[]).map((f,i)=><span key={i} className="food-pill can">{f}</span>)}</div></div>
-      <div className="food-panel a4"><div className="food-ph cant">✕ Evitar</div><div className="food-pb">{(patient.cantEat||[]).map((f,i)=><span key={i} className="food-pill cant">{f}</span>)}</div></div>
+    <div>
+      <div className="plano-hero a1">
+        <h1 className="plano-t">Plano de <em>Bem-Estar</em></h1>
+        <p className="plano-s">Recomendações personalizadas para você</p>
+      </div>
+      <div className="coming-card a2">
+        <div className="coming-ic" style={{fontFamily:'Georgia,serif',color:'rgba(255,255,255,.6)',fontSize:20}}>✦</div>
+        <div><div className="coming-title">Gerar Plano de Hoje com IA</div><div className="coming-sub">Em breve — baseado na sua fase e sintomas</div></div>
+      </div>
+      <div className="sec-pad a2"><div className="sec-hd"><span className="sec-title">Lembretes de Hoje</span></div></div>
+      {(patient.reminders||[]).map(r=>(
+        <div key={r.id} className="rem-card a3" style={{opacity:r.done?.85:1}}>
+          <div className="rem-ico" style={{fontFamily:'Georgia,serif'}}>◈</div>
+          <div className="rem-body">
+            <div className="rem-nm" style={{textDecoration:r.done?'line-through':''}}>{r.title}</div>
+            <div className="rem-desc">{r.desc}</div>
+            <div className="rem-time">◷ {r.time}</div>
+          </div>
+          <div className="rem-acts">
+            <button className="r-btn" style={{color:r.done?'var(--muted)':'var(--sage)'}} onClick={()=>togR(r.id)}>{r.done?'↩':'✓'}</button>
+            <button className="r-btn" style={{color:'var(--muted)'}} onClick={()=>delR(r.id)}>✕</button>
+          </div>
+        </div>
+      ))}
+      <div className="sec-pad a3"><div className="sec-hd"><span className="sec-title">Suplementação</span></div></div>
+      {(patient.supplements||[]).map((s,i)=>(
+        <div key={i} className="suppl-row a3">
+          <span style={{fontSize:16,color:'var(--terra)',fontFamily:'Georgia,serif'}}>◈</span>
+          <span className="suppl-nm">{s.name}</span>
+          <span className="suppl-ds">{s.dose}</span>
+        </div>
+      ))}
+      <div className="sec-pad a4"><div className="sec-hd"><span className="sec-title">Plano Alimentar</span></div></div>
+      <div className="food-panel a4">
+        <div className="food-ph can">✓ Pode comer</div>
+        <div className="food-pb">{(patient.canEat||[]).map((f,i)=><span key={i} className="food-pill can">{f}</span>)}</div>
+      </div>
+      <div className="food-panel a4">
+        <div className="food-ph cant">✕ Evitar</div>
+        <div className="food-pb">{(patient.cantEat||[]).map((f,i)=><span key={i} className="food-pill cant">{f}</span>)}</div>
+      </div>
+      <div style={{height:16}}/>
     </div>
   );
 }
 
 function PerfilTab({patient,upd,onLogout,flash}){
+  const [dob,setDob]=useState(patient.dob||'');
   const [hp,setHp]=useState(patient.hormonalPhase||'');
+  const [syms,setSyms]=useState(patient.symptoms||[]);
+  const [objs,setObjs]=useState(patient.objectives||[]);
   const s=patient.stats||{exercises:0,meditations:0,recipes:0,checkins:0};
+  const save=()=>{upd({dob,hormonalPhase:hp,symptoms:syms,objectives:objs});flash('Perfil salvo ✦');};
   return (
-    <div className="a1">
-      <div className="perf-hero"><div className="perf-av">{patient.name[0]}</div><div><div className="perf-nm">{patient.name}</div><div className="perf-em">{patient.email}</div></div></div>
-      <div className="stats-strip a2">
-        {[{v:s.exercises,l:'Exercícios',c:'ex'},{v:s.meditations,l:'Meditações',c:'med'},{v:checkins?.length||0,l:'Check-ins',c:'chk'}].map(st=>(<div key={st.l} className="stat-tile"><div className={`stat-v ${st.c}`}>{st.v}</div><div className="stat-l">{st.l}</div></div>))}
+    <div>
+      <div className="perf-hero a1">
+        <div className="perf-av">{patient.name[0]}</div>
+        <div><div className="perf-nm">{patient.name}</div><div className="perf-em">{patient.email}</div></div>
       </div>
-      <div className="perf-body"><button className="logout-lnk" onClick={onLogout}>↪ Sair da conta</button></div>
+      <div className="stats-strip a2">
+        {[{v:s.exercises,l:'Exercícios',c:'ex'},{v:s.meditations,l:'Meditações',c:'med'},{v:s.recipes,l:'Receitas',c:'rec'},{v:s.checkins,l:'Check-ins',c:'chk'}].map(st=>(
+          <div key={st.l} className="stat-tile">
+            <div className={`stat-v ${st.c}`}>{st.v}</div>
+            <div className="stat-l">{st.l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="perf-body a3">
+        <div className="perf-sec">Complete seu perfil</div>
+        <div className="fl"><label>Data de Nascimento</label><input className="fi" type="date" value={dob} onChange={e=>setDob(e.target.value)}/></div>
+        <div className="fl">
+          <label>Fase Hormonal Atual</label>
+          <select className="fs" value={hp} onChange={e=>setHp(e.target.value)}>
+            <option value="">Selecione...</option>
+            {HORMONAL.map(h=><option key={h} value={h}>{h}</option>)}
+          </select>
+        </div>
+        <div className="perf-sec">Sintomas que você sente</div>
+        <div className="tag-cloud">
+          {SYMPTOMS.map(s=><button key={s} className={`tag-opt${syms.includes(s)?' on':''}`} onClick={()=>setSyms(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s])}>{s}</button>)}
+        </div>
+        <div className="perf-sec">Seus objetivos</div>
+        <div className="tag-cloud">
+          {OBJECTIVES.map(o=><button key={o} className={`tag-opt${objs.includes(o)?' on':''}`} onClick={()=>setObjs(p=>p.includes(o)?p.filter(x=>x!==o):[...p,o])}>{o}</button>)}
+        </div>
+        <button className="btn-t" style={{marginTop:24}} onClick={save}>Salvar perfil</button>
+        <button className="logout-lnk" onClick={onLogout}>↪ Sair da conta</button>
+      </div>
     </div>
   );
 }
@@ -1102,68 +1601,693 @@ function Admin({patients,setP,onLogout,flash}){
   const [sec,setSec]=useState('dashboard');
   const [modal,setModal]=useState(null);
   const [detailP,setDetailP]=useState(null);
+  const [advConfirm,setAdvConfirm]=useState(null);
 
-  const updAdminPatient=async(id,d)=>{
-    const updated = patients.map(p=>p.id===id?{...p,...d}:p);
-    setP(updated);
-    const changed = updated.find(p=>p.id===id);
-    if(changed) window.__vita.savePatient(changed).catch(console.error);
-  };
+  const updP=(id,d)=>setP(patients.map(p=>p.id===id?{...p,...d}:p));
 
   const saveNewPatient=async(data)=>{
-    const newP = {...data, id:'p'+Date.now(), checkins: [], stats: {exercises:0,meditations:0,checkins:0}};
-    await window.__vita.savePatient(newP);
-    flash('Paciente criada ✦');
+    const newP={...data,id:'p'+Date.now()};
+    // Atualiza local imediatamente para a UI não travar
+    setP([...patients, newP]);
     setModal(null);
+    flash('Paciente criada ✦');
+    // Salva no Firebase — onSnapshot propaga para TODOS os dispositivos automaticamente
+    try {
+      await fbSavePatient(newP);
+    } catch(e) {
+      console.error('Erro ao salvar no Firebase:', e);
+      flash('⚠ Salvo localmente — verifique a conexão');
+    }
   };
 
-  const delP=async id=>{
-    if(!confirm('Remover permanentemente?'))return;
-    await window.__vita.deletePatient(id);
-    flash('Paciente removida');
+  const saveEditPatient=async(id,data)=>{
+    const updated={...patients.find(p=>p.id===id),...data};
+    setP(patients.map(p=>p.id===id?updated:p));
+    setModal(null);
+    flash('Paciente atualizada ✦');
+    try {
+      await fbSavePatient(updated);
+    } catch(e) {
+      console.error('Erro ao atualizar no Firebase:', e);
+      flash('⚠ Salvo localmente — verifique a conexão');
+    }
   };
+
+  const delP=async(id)=>{
+    if(!confirm('Remover esta paciente permanentemente?'))return;
+    setP(patients.filter(p=>p.id!==id));
+    flash('Paciente removida');
+    try {
+      await fbDeletePatient(id);
+    } catch(e) {
+      console.error('Erro ao deletar no Firebase:', e);
+    }
+  };
+
+  const doAdvance=id=>{
+    const p=patients.find(x=>x.id===id);
+    if(!p||p.currentPhase>=4){flash('Já está na fase máxima');return;}
+    const np=p.currentPhase+1;
+    const ul=[...(p.unlockedPhases||[1])];
+    if(!ul.includes(np))ul.push(np);
+    updP(id,{currentPhase:np,unlockedPhases:ul});
+    flash(`✦ Fase ${np} liberada para ${p.name.split(' ')[0]}!`);
+    setAdvConfirm(null);
+  };
+
+  // alerts: patients 3+ days without checkin
+  const alerts=patients.filter(p=>{
+    const checkins=p.checkins||[];
+    if(!checkins.length)return true;
+    const last=new Date(checkins[checkins.length-1].date);
+    const diff=(new Date()-last)/(1000*60*60*24);
+    return diff>=3;
+  });
+
+  const navItems=[
+    {id:'dashboard',ic:'◈',lb:'Dashboard'},
+    {id:'patients',ic:'◯',lb:'Pacientes'},
+    {id:'alerts',ic:'◇',lb:`Alertas${alerts.length?` (${alerts.length})`:''}`,},
+  ];
 
   return (
     <div className="adm-wrap">
       <div className="adm-side">
-        <div className="adm-brand"><div className="adm-brand-nm">Bio Vitalie</div><div className="adm-brand-sb">Clínica</div></div>
-        <button className={`adm-nb${sec==='dashboard'?' on':''}`} onClick={()=>setSec('dashboard')}>Dashboard</button>
-        <button className={`adm-nb${sec==='patients'?' on':''}`} onClick={()=>setSec('patients')}>Pacientes</button>
-        <div style={{marginTop:'auto'}}><button className="adm-nb" onClick={onLogout}>Sair</button></div>
+        <div className="adm-brand">
+          <div style={{fontSize:22,marginBottom:8}}>🌿</div>
+          <div className="adm-brand-nm">Vita</div>
+          <div className="adm-brand-sb">Painel Administrativo</div>
+        </div>
+        {navItems.map(n=>(
+          <button key={n.id} className={`adm-nb${sec===n.id?' on':''}`} onClick={()=>setSec(n.id)}>
+            <span style={{fontFamily:'Georgia,serif',marginRight:8}}>{n.ic}</span>{n.lb}
+          </button>
+        ))}
+        <div className="adm-side-foot">
+          <button className="btn btn-sec btn-sm" style={{width:'100%'}} onClick={onLogout}>Sair</button>
+        </div>
       </div>
+
       <div className="adm-main">
-        {sec==='dashboard' && <ADash patients={patients} onViewDetail={setDetailP}/>}
-        {sec==='patients' && <APatients patients={patients} onNew={()=>setModal('new')} onEdit={p=>setModal(p)} onDel={delP} onAdvance={id=>{}} onViewDetail={setDetailP}/>}
+        {sec==='dashboard' && <ADash patients={patients} onViewDetail={setDetailP} onAlert={()=>setSec('alerts')}/>}
+        {sec==='patients' && <APatients patients={patients} onNew={()=>setModal('new')} onEdit={p=>setModal(p)} onDel={delP} onAdvance={id=>setAdvConfirm(id)} onViewDetail={setDetailP}/>}
+        {sec==='alerts'   && <AAlerts patients={alerts} onViewDetail={setDetailP} onDismiss={()=>flash('Alerta dispensado')}/>}
       </div>
-      {modal && <PatientModal patient={modal==='new'?null:modal} onClose={()=>setModal(null)} onSave={d=>{if(modal==='new')saveNewPatient(d);else updAdminPatient(modal.id,d);}}/>}
+
+      {/* patient modal */}
+      {modal && (
+        <PatientModal
+          patient={modal==='new'?null:modal}
+          onClose={()=>setModal(null)}
+          onSave={d=>{
+            if(modal==='new') saveNewPatient(d);
+            else saveEditPatient(modal.id,d);
+            setModal(null);
+          }}
+        />
+      )}
+
+      {/* detail view */}
+      {detailP && (
+        <PatientDetail
+          patient={patients.find(p=>p.id===detailP)}
+          onClose={()=>setDetailP(null)}
+          onEdit={p=>{setDetailP(null);setModal(p);}}
+          onAdvance={id=>setAdvConfirm(id)}
+        />
+      )}
+
+      {/* advance phase confirm */}
+      {advConfirm && (()=>{
+        const p=patients.find(x=>x.id===advConfirm);
+        const cur=PHASES.find(x=>x.id===p.currentPhase)||PHASES[0];
+        const nxt=PHASES.find(x=>x.id===p.currentPhase+1);
+        return (
+          <div className="modal-bg">
+            <div className="modal-box" style={{maxWidth:440}}>
+              <div className="modal-hd">
+                <h2 className="modal-ttl">Avançar fase</h2>
+                <button className="modal-cls" onClick={()=>setAdvConfirm(null)}>✕</button>
+              </div>
+              <div className="phase-confirm">
+                <div className="phase-confirm-title">Confirmar progressão de {p.name.split(' ')[0]}?</div>
+                <div className="phase-confirm-txt">
+                  Você está avançando manualmente de <strong>{cur.name}</strong> para <strong>{nxt?.name||'fase final'}</strong>.<br/>
+                  Isso normalmente acontece de forma automática ao completar {cur.days} check-ins.<br/>
+                  <span style={{color:'var(--muted)'}}>Check-ins realizados: {p.checkins?.length||0}/{cur.days}</span>
+                </div>
+                <div className="phase-confirm-btns">
+                  <button className="btn btn-sec" onClick={()=>setAdvConfirm(null)}>Cancelar</button>
+                  <button className="btn btn-pri" onClick={()=>doAdvance(advConfirm)}>Confirmar avanço ✦</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
+// ── DASHBOARD ──
+function ADash({patients,onViewDetail,onAlert}){
+  const totalCI=patients.reduce((a,p)=>a+(p.checkins?.length||0),0);
+  const todayStr=new Date().toISOString().split('T')[0];
+  const activeToday=patients.filter(p=>(p.checkins||[]).some(c=>c.date===todayStr)).length;
+  const alerts=patients.filter(p=>{
+    const ci=p.checkins||[];
+    if(!ci.length)return true;
+    const diff=(new Date()-new Date(ci[ci.length-1].date))/(1000*60*60*24);
+    return diff>=3;
+  });
+
+  // weekly adherence last 4 weeks
+  const weeklyData=Array.from({length:4},(_,w)=>{
+    const start=new Date();start.setDate(start.getDate()-((3-w)*7)-start.getDay());
+    let count=0;
+    patients.forEach(p=>(p.checkins||[]).forEach(c=>{
+      const d=new Date(c.date);
+      if(d>=start&&d<new Date(start.getTime()+7*24*3600*1000))count++;
+    }));
+    return {week:`S-${4-w}`,count};
+  });
+  const maxW=Math.max(...weeklyData.map(x=>x.count),1);
+
+  return (
+    <div className="a1">
+      <div className="adm-ph">
+        <div><h1 className="adm-pt">Dashboard</h1><p className="adm-ps">{new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div>
+      </div>
+
+      {alerts.length>0&&(
+        <div className="alert-banner" style={{marginBottom:20,cursor:'pointer'}} onClick={onAlert}>
+          <span className="alert-icon">⚠️</span>
+          <div className="alert-txt"><strong>{alerts.length} paciente{alerts.length>1?'s':''}</strong> sem check-in há 3+ dias</div>
+          <button className="alert-action">Ver alertas ›</button>
+        </div>
+      )}
+
+      <div className="adm-stats">
+        {[
+          {ic:'◯',v:patients.length,l:'Pacientes ativas'},
+          {ic:'✦',v:totalCI,l:'Check-ins totais'},
+          {ic:'◈',v:activeToday,l:'Ativas hoje'},
+        ].map(s=>(
+          <div key={s.l} className="adm-stat">
+            <div className="adm-stat-ic" style={{fontFamily:'Georgia,serif',fontSize:20,color:'var(--terra)'}}>{s.ic}</div>
+            <div><div className="adm-stat-v">{s.v}</div><div className="adm-stat-l">{s.l}</div></div>
+          </div>
+        ))}
+      </div>
+
+      {/* weekly bar chart */}
+      <div className="adm-card">
+        <div className="adm-card-t">Check-ins por semana</div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:12,height:80}}>
+          {weeklyData.map((w,i)=>(
+            <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+              <div style={{width:'100%',background:'var(--bg2)',borderRadius:8,overflow:'hidden',height:60,display:'flex',alignItems:'flex-end'}}>
+                <div style={{width:'100%',height:`${Math.round((w.count/maxW)*100)}%`,background:'var(--grad)',borderRadius:8,minHeight:4,transition:'height .4s'}}/>
+              </div>
+              <span style={{fontSize:10,color:'var(--muted)',fontWeight:600}}>{w.week}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* patient progress */}
+      <div className="adm-card">
+        <div className="adm-card-t">Progresso das Pacientes</div>
+        {patients.map(p=>{
+          const ph=PHASES.find(x=>x.id===p.currentPhase)||PHASES[0];
+          const prevDays=PHASES.filter(x=>x.id<p.currentPhase).reduce((a,x)=>a+x.days,0);
+          const phCI=Math.max(0,(p.checkins?.length||0)-prevDays);
+          const pct=Math.min(Math.round((phCI/ph.days)*100),100);
+          const lastCI=p.checkins?.length?p.checkins[p.checkins.length-1].date:null;
+          const daysAgo=lastCI?Math.round((new Date()-new Date(lastCI))/(1000*60*60*24)):null;
+          return (
+            <div key={p.id} style={{marginBottom:20,cursor:'pointer'}} onClick={()=>onViewDetail(p.id)}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+                <div className="pt-av" style={{width:34,height:34,fontSize:13}}>{p.name[0]}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontWeight:600,fontSize:14}}>{p.name}</span>
+                    <span style={{fontSize:11,color:daysAgo===0?'var(--sage)':daysAgo>=3?'var(--rose)':'var(--muted)',fontWeight:600}}>
+                      {daysAgo===null?'Sem check-ins':daysAgo===0?'✓ Hoje':`${daysAgo}d atrás`}
+                    </span>
+                  </div>
+                  <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Fase {p.currentPhase}: {ph.name} · {phCI}/{ph.days} dias</div>
+                </div>
+              </div>
+              <div className="prog-wrap"><div className="prog-fill" style={{width:`${pct}%`}}/></div>
+            </div>
+          );
+        })}
+        {!patients.length&&<p style={{textAlign:'center',color:'var(--muted)',padding:'24px 0',fontSize:14}}>Nenhuma paciente cadastrada ainda</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── PATIENTS LIST ──
+function APatients({patients,onNew,onEdit,onDel,onAdvance,onViewDetail}){
+  const [search,setSearch]=useState('');
+  const todayStr=new Date().toISOString().split('T')[0];
+  const filtered=patients.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||p.email.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="a1">
+      <div className="adm-ph">
+        <div><h1 className="adm-pt">Pacientes</h1><p className="adm-ps">{patients.length} paciente{patients.length!==1?'s':''} cadastrada{patients.length!==1?'s':''}</p></div>
+        <button className="btn btn-pri" onClick={onNew}>+ Nova Paciente</button>
+      </div>
+
+      <div style={{marginBottom:20}}>
+        <input className="fi" placeholder="Buscar por nome ou e-mail..." value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:360}}/>
+      </div>
+
+      {filtered.map(p=>{
+        const ph=PHASES.find(x=>x.id===p.currentPhase)||PHASES[0];
+        const prevDays=PHASES.filter(x=>x.id<p.currentPhase).reduce((a,x)=>a+x.days,0);
+        const phCI=Math.max(0,(p.checkins?.length||0)-prevDays);
+        const pct=Math.min(Math.round((phCI/ph.days)*100),100);
+        const todayDone=(p.checkins||[]).some(c=>c.date===todayStr);
+        const s=p.stats||{};
+        const lastCI=p.checkins?.length?p.checkins[p.checkins.length-1].date:null;
+        const daysAgo=lastCI?Math.round((new Date()-new Date(lastCI))/(1000*60*60*24)):null;
+
+        return (
+          <div key={p.id} className="pt-card">
+            <div className="pt-card-top">
+              <div className="pt-card-av">{p.name[0]}</div>
+              <div className="pt-card-info">
+                <div className="pt-card-nm">{p.name}</div>
+                <div className="pt-card-mt">{p.email}</div>
+              </div>
+              <div className="pt-card-actions">
+                <span className="pt-ph-tag">Fase {p.currentPhase}</span>
+                <span style={{fontSize:11,fontWeight:600,padding:'4px 10px',borderRadius:20,
+                  background:todayDone?'rgba(107,140,110,.12)':'rgba(196,120,120,.08)',
+                  color:todayDone?'var(--sage)':'var(--rose)'}}>
+                  {todayDone?'✓ Check-in':'Sem check-in'}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-card-body">
+              {[
+                {v:p.checkins?.length||0,l:'Check-ins',c:'ci'},
+                {v:s.exercises||0,l:'Exercícios',c:'ex'},
+                {v:s.meditations||0,l:'Meditações',c:'med'},
+                {v:daysAgo===null?'—':daysAgo===0?'hoje':`${daysAgo}d`,l:'Último CI',c:'ph'},
+              ].map(st=>(
+                <div key={st.l} className="pt-mini-stat">
+                  <div className={`pt-mini-stat-v ${st.c}`}>{st.v}</div>
+                  <div className="pt-mini-stat-l">{st.l}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-card-prog">
+              <div className="pt-card-prog-lbl">
+                <span>{ph.name} — {phCI}/{ph.days} dias</span>
+                <strong>{pct}%</strong>
+              </div>
+              <div className="prog-wrap"><div className="prog-fill" style={{width:`${pct}%`}}/></div>
+            </div>
+
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <button className="btn btn-sec btn-sm" onClick={()=>onViewDetail(p.id)}>📊 Ver detalhes</button>
+              <button className="btn btn-sec btn-sm" onClick={()=>onEdit(p)}>✏ Editar</button>
+              <button className="btn btn-gho btn-sm" onClick={()=>onAdvance(p.id)}>↑ Avançar fase</button>
+              <button className="btn btn-dan btn-sm" onClick={()=>onDel(p.id)}>✕ Remover</button>
+            </div>
+          </div>
+        );
+      })}
+      {!filtered.length&&<p style={{textAlign:'center',color:'var(--muted)',padding:'40px 0',fontSize:14}}>{search?'Nenhuma paciente encontrada':'Nenhuma paciente cadastrada ainda'}</p>}
+    </div>
+  );
+}
+
+// ── ALERTS ──
+function AAlerts({patients,onViewDetail}){
+  return (
+    <div className="a1">
+      <div className="adm-ph">
+        <div><h1 className="adm-pt">Alertas</h1><p className="adm-ps">Pacientes que precisam de atenção</p></div>
+      </div>
+      {!patients.length&&(
+        <div style={{textAlign:'center',padding:'60px 0'}}>
+          <div style={{fontSize:48,marginBottom:16}}>✦</div>
+          <div style={{fontFamily:'Libre Baskerville,serif',fontSize:20,marginBottom:8}}>Tudo em dia!</div>
+          <div style={{fontSize:14,color:'var(--muted)'}}>Nenhuma paciente com alerta no momento.</div>
+        </div>
+      )}
+      {patients.map(p=>{
+        const ci=p.checkins||[];
+        const lastCI=ci.length?ci[ci.length-1].date:null;
+        const daysAgo=lastCI?Math.round((new Date()-new Date(lastCI))/(1000*60*60*24)):null;
+        const ph=PHASES.find(x=>x.id===p.currentPhase)||PHASES[0];
+        return (
+          <div key={p.id} className="alert-banner" style={{flexDirection:'column',alignItems:'flex-start',gap:10,marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,width:'100%'}}>
+              <span className="alert-icon">⚠️</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:14}}>{p.name}</div>
+                <div className="alert-txt" style={{marginTop:2}}>
+                  {daysAgo===null
+                    ?<>Nunca realizou um check-in — paciente inativa desde o cadastro</>
+                    :<>Sem check-in há <strong>{daysAgo} dias</strong> · Fase {p.currentPhase}: {ph.name}</>
+                  }
+                </div>
+              </div>
+              <button className="btn btn-sec btn-sm" onClick={()=>onViewDetail(p.id)}>Ver perfil</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── PATIENT DETAIL MODAL ──
+function PatientDetail({patient,onClose,onEdit,onAdvance}){
+  const [tab,setTab]=useState('overview');
+  if(!patient)return null;
+
+  const checkins=[...(patient.checkins||[])].reverse();
+  const ph=PHASES.find(x=>x.id===patient.currentPhase)||PHASES[0];
+  const prevDays=PHASES.filter(x=>x.id<patient.currentPhase).reduce((a,x)=>a+x.days,0);
+  const phCI=Math.max(0,(patient.checkins?.length||0)-prevDays);
+  const pct=Math.min(Math.round((phCI/ph.days)*100),100);
+  const s=patient.stats||{};
+
+  // symptom frequency
+  const symFreq={};
+  (patient.checkins||[]).forEach(c=>(c.symptoms||[]).forEach(s=>{symFreq[s]=(symFreq[s]||0)+1;}));
+  const topSyms=Object.entries(symFreq).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxSym=topSyms[0]?.[1]||1;
+
+  // avg energy/sleep/water
+  const cis=patient.checkins||[];
+  const avgEnergy=cis.length?Math.round(cis.reduce((a,c)=>a+(c.energy||0),0)/cis.length*10)/10:0;
+  const avgSleep=cis.length?Math.round(cis.reduce((a,c)=>a+(c.sleep||0),0)/cis.length*10)/10:0;
+  const avgWater=cis.length?Math.round(cis.reduce((a,c)=>a+(c.water||0),0)/cis.length*10)/10:0;
+
+  // last 30 days heatmap
+  const today=new Date();
+  const doneSet=new Set((patient.checkins||[]).map(c=>c.date));
+  const last30=Array.from({length:30},(_,i)=>{const d=new Date(today);d.setDate(today.getDate()-29+i);return d.toISOString().split('T')[0];});
+
+  const mmap={Ótimo:'😊',Bom:'🙂',Regular:'😐',Ruim:'😕',Péssimo:'😞'};
+
+  return (
+    <div className="modal-bg" onClick={e=>e.target.className==='modal-bg'&&onClose()}>
+      <div className="modal-box" style={{maxWidth:640}}>
+        {/* header */}
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:20,padding:'0 0 18px',borderBottom:'1px solid var(--border2)'}}>
+          <div className="pt-card-av" style={{width:50,height:50,fontSize:20}}>{patient.name[0]}</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:'Libre Baskerville,serif',fontSize:20,fontWeight:400}}>{patient.name}</div>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{patient.email} · CPF: {patient.cpf}</div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-sec btn-sm" onClick={()=>onEdit(patient)}>✏ Editar</button>
+            {patient.currentPhase<4&&<button className="btn btn-gho btn-sm" onClick={()=>onAdvance(patient.id)}>↑ Fase</button>}
+            <button className="modal-cls" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        {/* tabs */}
+        <div className="modal-tabs">
+          {[{id:'overview',l:'Visão geral'},{id:'checkins',l:'Check-ins'},{id:'symptoms',l:'Sintomas'},{id:'protocol',l:'Protocolo'}].map(t=>(
+            <button key={t.id} className={`modal-tab${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</button>
+          ))}
+        </div>
+
+        {/* OVERVIEW */}
+        {tab==='overview'&&(
+          <div>
+            <div className="chk-detail-grid">
+              {[
+                {v:patient.checkins?.length||0,l:'Check-ins totais'},
+                {v:`${pct}%`,l:`Progresso — Fase ${patient.currentPhase}`},
+                {v:avgEnergy||'—',l:'Média energia'},
+                {v:avgSleep||'—',l:'Média sono'},
+              ].map(st=>(
+                <div key={st.l} className="chk-detail-box">
+                  <div className="chk-detail-val">{st.v}</div>
+                  <div className="chk-detail-lbl">{st.l}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{fontWeight:700,fontSize:13,marginBottom:10,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Progresso na fase</div>
+            <div className="pt-card-prog-lbl">
+              <span>{ph.name} ({ph.months})</span><strong>{pct}%</strong>
+            </div>
+            <div className="prog-wrap" style={{height:8,marginBottom:6}}><div className="prog-fill" style={{width:`${pct}%`}}/></div>
+            <div style={{fontSize:12,color:'var(--muted)',marginBottom:20}}>{phCI} de {ph.days} dias concluídos</div>
+
+            <div style={{fontWeight:700,fontSize:13,marginBottom:10,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Últimos 30 dias</div>
+            <div className="week-heatmap">
+              {last30.map((d,i)=>(
+                <div key={i} className={`hm-day${doneSet.has(d)?' done':''}${d===new Date().toISOString().split('T')[0]?' today':''}`} title={d}/>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:12,fontSize:11,color:'var(--muted)',marginTop:6}}>
+              <span>◼ Check-in feito</span><span>□ Sem check-in</span>
+            </div>
+          </div>
+        )}
+
+        {/* CHECKINS */}
+        {tab==='checkins'&&(
+          <div>
+            {!checkins.length&&<p style={{textAlign:'center',color:'var(--muted)',padding:'32px 0',fontSize:14}}>Nenhum check-in registrado ainda</p>}
+            <div className="chk-timeline">
+              {checkins.slice(0,20).map((c,i)=>{
+                const isGood=['Ótimo','Bom'].includes(c.mood);
+                return (
+                  <div key={i} className="chk-tl-item">
+                    <div className={`chk-tl-dot${isGood?' good':c.mood?'bad':''}`}>{mmap[c.mood]||'◇'}</div>
+                    <div className="chk-tl-content">
+                      <div className="chk-tl-date">{new Date(c.date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'})}</div>
+                      <div className="chk-tl-mood">{c.mood||'Humor não registrado'}</div>
+                      <div className="chk-tl-tags">
+                        {c.energy>0&&<span className="chk-tl-tag">⚡ Energia {c.energy}/5</span>}
+                        {c.sleep>0&&<span className="chk-tl-tag">◑ Sono {c.sleep}/5</span>}
+                        {c.water>0&&<span className="chk-tl-tag">💧 {c.water} copos</span>}
+                        {c.exerciseDone&&<span className="chk-tl-tag pos">Exercício ✓</span>}
+                        {c.meditationDone&&<span className="chk-tl-tag pos">Meditação ✓</span>}
+                        {(c.symptoms||[]).map((s,j)=><span key={j} className="chk-tl-tag neg">{s}</span>)}
+                      </div>
+                      {c.notes&&<div className="chk-tl-notes">"{c.notes}"</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              {checkins.length>20&&<p style={{fontSize:12,color:'var(--muted)',textAlign:'center',paddingTop:12}}>Mostrando os 20 mais recentes de {checkins.length} check-ins</p>}
+            </div>
+          </div>
+        )}
+
+        {/* SYMPTOMS */}
+        {tab==='symptoms'&&(
+          <div>
+            {!topSyms.length&&<p style={{textAlign:'center',color:'var(--muted)',padding:'32px 0',fontSize:14}}>Nenhum sintoma registrado ainda</p>}
+            {topSyms.length>0&&(
+              <>
+                <div style={{fontWeight:700,fontSize:13,marginBottom:16,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Sintomas mais frequentes</div>
+                {topSyms.map(([sym,cnt],i)=>(
+                  <div key={i} className="sym-freq-item">
+                    <span className="sym-freq-name">{sym}</span>
+                    <div className="sym-freq-bar-wrap">
+                      <div className="sym-freq-bar" style={{width:`${Math.round((cnt/maxSym)*100)}%`}}/>
+                    </div>
+                    <span className="sym-freq-count">{cnt}×</span>
+                  </div>
+                ))}
+                <div style={{marginTop:20,padding:14,background:'var(--bg2)',borderRadius:12,fontSize:13,color:'var(--ink3)'}}>
+                  <strong style={{color:'var(--ink)'}}>Média de bem-estar:</strong> Energia {avgEnergy}/5 · Sono {avgSleep}/5 · {avgWater} copos/dia
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* PROTOCOL */}
+        {tab==='protocol'&&(
+          <div>
+            {/* supplements */}
+            <div style={{fontWeight:700,fontSize:13,marginBottom:10,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Suplementação</div>
+            {(patient.supplements||[]).map((s,i)=>(
+              <div key={i} className="s-row" style={{marginBottom:7}}>
+                <span style={{color:'var(--terra)',fontFamily:'Georgia,serif'}}>◈</span>
+                <span className="s-txt"><b>{s.name}</b> — {s.dose}</span>
+              </div>
+            ))}
+            {!(patient.supplements||[]).length&&<p style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Nenhum suplemento cadastrado</p>}
+
+            <div style={{margin:'16px 0 10px',fontWeight:700,fontSize:13,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Plano Alimentar</div>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:8}}>
+              {(patient.canEat||[]).map((f,i)=><span key={i} className="t-pill g">{f}</span>)}
+            </div>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
+              {(patient.cantEat||[]).map((f,i)=><span key={i} className="t-pill r">✕ {f}</span>)}
+            </div>
+
+            <div style={{margin:'16px 0 10px',fontWeight:700,fontSize:13,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--muted)'}}>Exames Recomendados</div>
+            {(patient.exams||[]).map((ex,i)=>(
+              <div key={i} className="s-row" style={{marginBottom:7}}>
+                <span style={{fontFamily:'Georgia,serif',color:'#7a9dc4'}}>◈</span>
+                <span className="s-txt">{ex.name} <span style={{color:'var(--muted)',fontWeight:400}}>— {ex.month}</span></span>
+              </div>
+            ))}
+            {!(patient.exams||[]).length&&<p style={{fontSize:13,color:'var(--muted)'}}>Nenhum exame cadastrado</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PATIENT MODAL (tabbed) ──
 function PatientModal({patient,onClose,onSave}){
-  const [form,setForm]=useState(patient||{name:'',cpf:'',email:'',password:'vita@2024',currentPhase:1,canEat:[],cantEat:[],supplements:[],exams:[]});
+  const [tab,setTab]=useState('dados');
+  const [name,setName]=useState(patient?.name||'');
+  const [cpf,setCpf]=useState(patient?.cpf||'');
+  const [email,setEmail]=useState(patient?.email||'');
+  const [pw,setPw]=useState(patient?.password||'vita@2024');
+  const [phase,setPhase]=useState(patient?.currentPhase||1);
+  const [can,setCan]=useState(patient?.canEat||[]);
+  const [cant,setCant]=useState(patient?.cantEat||[]);
+  const [suppl,setSuppl]=useState(patient?.supplements||[]);
+  const [exams,setExams]=useState(patient?.exams||[]);
+  const [ci,setCi]=useState('');const [cni,setCni]=useState('');
+  const [sn,setSn]=useState('');const [sd,setSd]=useState('');
+  const [xn,setXn]=useState('');const [xm,setXm]=useState('');
+
   const fmt=v=>{const n=v.replace(/\D/g,'').slice(0,11);return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4').replace(/(\d{3})(\d{3})(\d{3})/,'$1.$2.$3').replace(/(\d{3})(\d{3})/,'$1.$2').replace(/(\d{3})/,'$1');};
+  const addT=(arr,set,v,sv)=>{if(!v.trim())return;set([...arr,v.trim()]);sv('');};
+  const remT=(arr,set,i)=>set(arr.filter((_,j)=>j!==i));
+
+  const doSave=()=>{
+    if(!name||!cpf||!email){alert('Nome, CPF e email são obrigatórios');return;}
+    onSave({
+      name,cpf,email,password:pw,currentPhase:+phase,
+      unlockedPhases:Array.from({length:+phase},(_,i)=>i+1),
+      canEat:can,cantEat:cant,supplements:suppl,exams,
+      exercises:patient?.exercises||[],meditations:patient?.meditations||[],recipes:patient?.recipes||[],
+      checkins:patient?.checkins||[],stats:patient?.stats||{exercises:0,meditations:0,recipes:0,checkins:0},
+      reminders:patient?.reminders||[{id:'r1',title:'Check-in diário',desc:'Registre como você está se sentindo hoje',time:'20:00',done:false}],
+      bio:patient?.bio||{},symptoms:patient?.symptoms||[],objectives:patient?.objectives||[],
+      dob:patient?.dob||'',hormonalPhase:patient?.hormonalPhase||'',
+    });
+  };
+
+  const tabs=[{id:'dados',l:'Dados'},{id:'protocolo',l:'Protocolo'},{id:'exames',l:'Exames'}];
+
   return (
     <div className="modal-bg">
       <div className="modal-box">
-        <div className="modal-hd"><h2 className="modal-ttl">{patient?'Editar':'Nova'} Paciente</h2><button className="modal-cls" onClick={onClose}>✕</button></div>
-        <div className="grid2">
-          <div className="fl"><label>Nome</label><input className="fi" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
-          <div className="fl"><label>CPF</label><input className="fi" value={form.cpf} onChange={e=>setForm({...form,cpf:fmt(e.target.value)})}/></div>
+        <div className="modal-hd">
+          <h2 className="modal-ttl">{patient?`Editar — ${patient.name.split(' ')[0]}`:'Nova Paciente'}</h2>
+          <button className="modal-cls" onClick={onClose}>✕</button>
         </div>
-        <div className="fl"><label>E-mail</label><input className="fi" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></div>
-        <div className="fl"><label>Fase</label>
-          <select className="fi" value={form.currentPhase} onChange={e=>setForm({...form,currentPhase:Number(e.target.value)})}>
-            {PHASES.map(p=><option key={p.id} value={p.id}>Fase {p.id}: {p.name}</option>)}
-          </select>
+
+        <div className="modal-tabs">
+          {tabs.map(t=><button key={t.id} className={`modal-tab${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</button>)}
         </div>
-        <button className="btn-t" onClick={()=>onSave(form)}>Salvar Paciente</button>
+
+        {/* TAB: DADOS */}
+        {tab==='dados'&&(
+          <div>
+            <div className="grid2">
+              <div className="fl"><label>Nome completo</label><input className="fi" value={name} onChange={e=>setName(e.target.value)} placeholder="Maria Silva"/></div>
+              <div className="fl"><label>CPF</label><input className="fi" value={cpf} onChange={e=>setCpf(fmt(e.target.value))} placeholder="000.000.000-00"/></div>
+              <div className="fl"><label>E-mail</label><input className="fi" value={email} onChange={e=>setEmail(e.target.value)} placeholder="maria@email.com"/></div>
+              <div className="fl"><label>Senha inicial</label><input className="fi" value={pw} onChange={e=>setPw(e.target.value)}/></div>
+            </div>
+            <div className="fl">
+              <label>Fase atual</label>
+              <select className="fs" value={phase} onChange={e=>setPhase(e.target.value)}>
+                {PHASES.map(p=><option key={p.id} value={p.id}>Fase {p.id}: {p.name} ({p.months})</option>)}
+              </select>
+            </div>
+            <div style={{marginTop:16,padding:14,background:'var(--bg2)',borderRadius:12,fontSize:13,color:'var(--ink3)'}}>
+              💡 Exercícios, meditações e receitas são fornecidos automaticamente por fase. Você pode personalizar o protocolo alimentar e suplementação na aba <strong>Protocolo</strong>.
+            </div>
+          </div>
+        )}
+
+        {/* TAB: PROTOCOLO */}
+        {tab==='protocolo'&&(
+          <div>
+            <div className="ml" style={{marginTop:0}}>✓ Pode comer</div>
+            <div className="tags-d">{can.map((t,i)=><span key={i} className="t-pill g">{t}<span className="t-pill-x" onClick={()=>remT(can,setCan,i)}>×</span></span>)}</div>
+            <div className="t-inp">
+              <input value={ci} onChange={e=>setCi(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addT(can,setCan,ci,setCi)} placeholder="Ex: frango, brócolis, ovos..."/>
+              <button className="btn btn-sec btn-sm" onClick={()=>addT(can,setCan,ci,setCi)}>+</button>
+            </div>
+
+            <div className="ml">✕ Não pode comer</div>
+            <div className="tags-d">{cant.map((t,i)=><span key={i} className="t-pill r">{t}<span className="t-pill-x" onClick={()=>remT(cant,setCant,i)}>×</span></span>)}</div>
+            <div className="t-inp">
+              <input value={cni} onChange={e=>setCni(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addT(cant,setCant,cni,setCni)} placeholder="Ex: glúten, laticínios, açúcar..."/>
+              <button className="btn btn-sec btn-sm" onClick={()=>addT(cant,setCant,cni,setCni)}>+</button>
+            </div>
+
+            <div className="divv"/>
+            <div className="ml" style={{marginTop:0}}>◈ Suplementação</div>
+            {suppl.map((s,i)=>(
+              <div key={i} className="s-row">
+                <span style={{color:'var(--terra)',fontFamily:'Georgia,serif'}}>◈</span>
+                <span className="s-txt"><b>{s.name}</b> — {s.dose}</span>
+                <button className="s-del" onClick={()=>setSuppl(suppl.filter((_,j)=>j!==i))}>×</button>
+              </div>
+            ))}
+            <div className="t-inp">
+              <input value={sn} onChange={e=>setSn(e.target.value)} placeholder="Nome do suplemento" style={{flex:2}}/>
+              <input value={sd} onChange={e=>setSd(e.target.value)} placeholder="Dosagem" style={{flex:1}}/>
+              <button className="btn btn-sec btn-sm" onClick={()=>{if(sn.trim()){setSuppl([...suppl,{name:sn.trim(),dose:sd.trim()}]);setSn('');setSd('');}}}>+</button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: EXAMES */}
+        {tab==='exames'&&(
+          <div>
+            <div style={{padding:14,background:'var(--bg2)',borderRadius:12,fontSize:13,color:'var(--ink3)',marginBottom:16}}>
+              Cadastre os exames recomendados para esta paciente nesta fase do protocolo.
+            </div>
+            {exams.map((ex,i)=>(
+              <div key={i} className="s-row">
+                <span style={{fontFamily:'Georgia,serif',color:'#7a9dc4'}}>◈</span>
+                <span className="s-txt"><b>{ex.name}</b> — {ex.month}</span>
+                <button className="s-del" onClick={()=>setExams(exams.filter((_,j)=>j!==i))}>×</button>
+              </div>
+            ))}
+            <div className="t-inp">
+              <input value={xn} onChange={e=>setXn(e.target.value)} placeholder="Nome do exame" style={{flex:2}}/>
+              <input value={xm} onChange={e=>setXm(e.target.value)} placeholder="Ex: Mês 1" style={{flex:1}}/>
+              <button className="btn btn-sec btn-sm" onClick={()=>{if(xn.trim()){setExams([...exams,{name:xn.trim(),month:xm||'Mês 1',icon:'◈'}]);setXn('');setXm('');}}}>+</button>
+            </div>
+          </div>
+        )}
+
+        <div className="modal-foot">
+          <button className="btn btn-sec" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-pri" onClick={doSave}>Salvar Paciente</button>
+        </div>
       </div>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+
 </script>
 </body>
 </html>
