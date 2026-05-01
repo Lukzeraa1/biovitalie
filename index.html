@@ -882,7 +882,7 @@ function Login({patients,onLogin,flash}){
     setErr('');
     const em=email.trim().toLowerCase();
     if(mode==='admin'){
-      if(em==='admin@biovitalie.com'&&pw==='admin123'){ onLogin({type:'admin'},remember); return; }
+      if(em==='admin@bio.com'&&pw==='clinvida2026'){ onLogin({type:'admin'},remember); return; }
       setErr('E-mail ou senha incorretos'); return;
     }
     const pt=patients.find(p=>p.email&&p.email.toLowerCase()===em);
