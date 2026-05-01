@@ -94,7 +94,9 @@ window.__vita = {
     const res = await fetch(`${API_URL}?action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`);
     return await res.json();
   }
-
+ subscribePatients: (cb) => {
+  window.__vita.loadPatients().then(cb);
+  return () => {};
 };
 
 window.__vitaReady = true;
