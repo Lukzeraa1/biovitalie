@@ -927,7 +927,7 @@ function Login({patients,onLogin,flash}){
         <button onClick={back} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontFamily:'Jost,sans-serif',fontSize:13,marginBottom:28,padding:0,display:'flex',alignItems:'center',gap:6}}>← Voltar</button>
         <div className="lg-logotype"><div className="lg-emblem">🌸</div><div className="lg-brand">Bem-vinda<span>Acesse seu programa</span></div></div>
         <h1 className="lg-h1">Olá, <em>bom te ver</em></h1>
-        <p className="lg-sub">Entre com seu e-mail e senha para acessar seu programa personalizado</p>
+        <p className="lg-sub">Use o <strong>e-mail</strong> cadastrado e a <strong>senha enviada via WhatsApp</strong> na confirmação da sua assinatura.</p>
         <div className="fl"><label>E-mail</label><input className="fi" type="email" placeholder="seu@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/></div>
         <div className="fl"><label>Senha</label><input className="fi" type="password" placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div>
         <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,cursor:'pointer'}}>
@@ -938,7 +938,6 @@ function Login({patients,onLogin,flash}){
         </label>
         {err&&<div style={{background:'rgba(196,120,120,.1)',border:'1px solid rgba(196,120,120,.25)',borderRadius:10,padding:'10px 14px',fontSize:13,color:'var(--rose)',marginBottom:14}}>⚠ {err}</div>}
         <button className="btn-t" onClick={go}>Entrar no programa</button>
-        <div className="lg-dm" style={{marginTop:16}}>Demo · e-mail: ana@email.com · senha: vita@2024</div>
       </div>
     </div>
   );
@@ -971,7 +970,6 @@ function Login({patients,onLogin,flash}){
         <button onClick={go} style={{width:'100%',padding:15,background:'linear-gradient(135deg,var(--terra),var(--gold))',border:'none',borderRadius:12,fontFamily:'Jost,sans-serif',fontSize:14,fontWeight:600,letterSpacing:'.06em',color:'white',cursor:'pointer',boxShadow:'0 6px 24px rgba(181,103,58,.4)',transition:'all .15s'}}
           onMouseOver={e=>{e.currentTarget.style.transform='translateY(-2px)';}}
           onMouseOut={e=>{e.currentTarget.style.transform='';}}>Entrar no painel</button>
-        <div style={{textAlign:'center',marginTop:20,fontSize:11,color:'rgba(255,255,255,.2)'}}>Demo · e-mail: admin@biovitalie.com · senha: admin123</div>
       </div>
     </div>
   );
